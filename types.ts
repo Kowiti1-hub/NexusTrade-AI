@@ -30,7 +30,7 @@ export type OrderSide = 'BUY' | 'SELL';
 export type OrderType = 'MARKET' | 'LIMIT' | 'STOP_LOSS';
 
 export interface ExecutedOrder {
-  id: string;
+  orderId: string;
   symbol: string;
   side: OrderSide;
   type: OrderType;
@@ -40,13 +40,17 @@ export interface ExecutedOrder {
 }
 
 export interface PendingOrder {
-  id: string;
+  orderId: string;
   symbol: string;
   side: OrderSide;
   type: OrderType;
   shares: number;
   limitPrice: number; // For Stop Loss, this acts as the "Stop Price"
   timestamp: number;
+  // Trailing stop-loss fields
+  isTrailing?: boolean;
+  trailingAmount?: number;
+  highestPriceObserved?: number;
 }
 
 export interface Portfolio {

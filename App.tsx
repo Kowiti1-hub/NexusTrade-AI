@@ -7,7 +7,16 @@ import StockChart from './components/StockChart';
 import NewsFeed from './components/NewsFeed';
 import PortfolioChart from './components/PortfolioChart';
 import TradeHistory from './components/TradeHistory';
+import ConfirmationModal from './components/ConfirmationModal';
+import PendingOrders from './components/PendingOrders';
 import { getMarketAnalysis, getStockNews } from './services/geminiService';
+
+const generateOrderId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
 
 const generateInitialPortfolioHistory = (currentBalance: number): PortfolioHistoryPoint[] => {
   const history: PortfolioHistoryPoint[] = [];
@@ -43,11 +52,23 @@ const App: React.FC = () => {
   const [tradeAmount, setTradeAmount] = useState<string>("");
   const [orderType, setOrderType] = useState<OrderType>('MARKET');
   const [limitPrice, setLimitPrice] = useState<string>("");
+  const [isTrailing, setIsTrailing] = useState<boolean>(false);
+
+  // Confirmation Modal State
+  const [pendingTrade, setPendingTrade] = useState<{
+    side: OrderSide;
+    symbol: string;
+    shares: number;
+    price: number;
+    orderType: OrderType;
+    totalValue: number;
+    isTrailing?: boolean;
+    trailingAmount?: number;
+  } | null>(null);
 
   const selectedStock = stocks.find(s => s.symbol === selectedSymbol) || stocks[0];
   const currentPosition = portfolio.positions.find(p => p.symbol === selectedSymbol);
   
-  // Refs for real-time calculations without re-running intervals
   const portfolioRef = useRef(portfolio);
   portfolioRef.current = portfolio;
 
@@ -71,15 +92,13 @@ const App: React.FC = () => {
   const gainLossPercent = (totalGainLoss / INITIAL_BALANCE) * 100;
   const investedValue = currentTotalValue - portfolio.balance;
 
-  // REAL-TIME TICKER EFFECT
   useEffect(() => {
     const interval = setInterval(() => {
       let updatedStocks: StockData[] = [];
       
       setStocks(currentStocks => {
         updatedStocks = currentStocks.map(stock => {
-          // Smaller volatility (0.1%) for high-frequency updates
-          const changeFactor = 1 + (Math.random() - 0.5) * 0.001; 
+          const changeFactor = 1 + (Math.random() - 0.5) * 0.005;
           const newPrice = parseFloat((stock.price * changeFactor).toFixed(2));
           const priceDiff = newPrice - stock.price;
           const newChange = stock.change + priceDiff;
@@ -101,24 +120,42 @@ const App: React.FC = () => {
         return updatedStocks;
       });
 
-      // Update Portfolio History using the latest stocks and portfolio state
       setPortfolioHistory(prev => {
         const totalVal = calculateTotalValue(updatedStocks, portfolioRef.current);
         const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        // Maintain a moving window of 50 points
         return [...prev.slice(-49), { time: nowStr, value: totalVal }];
       });
-    }, 1000); // 1-second interval for real-time feel
+    }, 1000);
 
     return () => clearInterval(interval);
-  }, []); // Empty dependency array means this interval persists for the life of the app
+  }, []);
 
-  // Process Limit and Stop-Loss Orders when stocks change
+  // Complex Order Processing Logic (Trailing & Triggers)
   useEffect(() => {
     const triggeredOrders: PendingOrder[] = [];
     const remainingOrders: PendingOrder[] = [];
+    let stateChanged = false;
 
-    portfolio.pendingOrders.forEach(order => {
+    const newPendingOrders = portfolio.pendingOrders.map(order => {
+      const stock = stocks.find(s => s.symbol === order.symbol);
+      if (!stock) return order;
+
+      if (order.type === 'STOP_LOSS' && order.isTrailing) {
+        if (stock.price > (order.highestPriceObserved || 0)) {
+          stateChanged = true;
+          const newHighest = stock.price;
+          const newStopPrice = newHighest - (order.trailingAmount || 0);
+          return {
+            ...order,
+            highestPriceObserved: newHighest,
+            limitPrice: newStopPrice
+          };
+        }
+      }
+      return order;
+    });
+
+    newPendingOrders.forEach(order => {
       const stock = stocks.find(s => s.symbol === order.symbol);
       if (!stock) return;
 
@@ -133,12 +170,13 @@ const App: React.FC = () => {
 
       if (isTriggered) {
         triggeredOrders.push(order);
+        stateChanged = true;
       } else {
         remainingOrders.push(order);
       }
     });
 
-    if (triggeredOrders.length > 0) {
+    if (stateChanged) {
       setPortfolio(prev => {
         let newBalance = prev.balance;
         const newPositions = [...prev.positions];
@@ -148,9 +186,8 @@ const App: React.FC = () => {
           const stock = stocks.find(s => s.symbol === order.symbol)!;
           const executionPrice = stock.price;
           
-          // Record to history
           const executed: ExecutedOrder = {
-            id: Math.random().toString(36).substr(2, 9),
+            orderId: generateOrderId(),
             symbol: order.symbol,
             side: order.side,
             type: order.type,
@@ -203,58 +240,87 @@ const App: React.FC = () => {
 
   const handleTrade = (side: OrderSide) => {
     const shares = parseFloat(tradeAmount);
-    const price = (orderType === 'LIMIT' || orderType === 'STOP_LOSS') ? parseFloat(limitPrice) : selectedStock.price;
+    let price = (orderType === 'LIMIT' || orderType === 'STOP_LOSS') ? parseFloat(limitPrice) : selectedStock.price;
 
     if (isNaN(shares) || shares <= 0) return;
     if (orderType !== 'MARKET' && (isNaN(price) || price <= 0)) return;
+
+    if (orderType === 'STOP_LOSS' && isTrailing) {
+      price = selectedStock.price - price; 
+    }
 
     if (orderType === 'STOP_LOSS' && side === 'BUY') {
       alert("Stop loss is typically used for selling to limit losses on a position.");
       return;
     }
 
-    const totalValueAtTarget = shares * price;
+    const totalValue = shares * (orderType === 'MARKET' ? selectedStock.price : (isTrailing ? selectedStock.price : price));
 
     if (side === 'BUY') {
-      if (portfolio.balance < totalValueAtTarget) {
+      if (portfolio.balance < totalValue) {
         alert("Insufficient balance!");
         return;
       }
+    } else {
+      const existingPos = portfolio.positions.find(p => p.symbol === selectedSymbol);
+      if (!existingPos || existingPos.shares < shares) {
+        alert("Insufficient shares in active position!");
+        return;
+      }
+    }
 
+    setPendingTrade({
+      side,
+      symbol: selectedSymbol,
+      shares,
+      price: price,
+      orderType,
+      totalValue,
+      isTrailing,
+      trailingAmount: isTrailing ? parseFloat(limitPrice) : undefined
+    });
+  };
+
+  const executeTrade = () => {
+    if (!pendingTrade) return;
+    const { side, shares, price, orderType, symbol, totalValue, isTrailing, trailingAmount } = pendingTrade;
+
+    if (side === 'BUY') {
       if (orderType === 'MARKET') {
         setPortfolio(prev => {
-          const existingIdx = prev.positions.findIndex(p => p.symbol === selectedSymbol);
+          const existingIdx = prev.positions.findIndex(p => p.symbol === symbol);
           const newPositions = [...prev.positions];
+          const execPrice = selectedStock.price;
           if (existingIdx >= 0) {
             const pos = newPositions[existingIdx];
             const newTotal = pos.shares + shares;
-            const newAvg = (pos.avgPrice * pos.shares + totalValueAtTarget) / newTotal;
+            const newAvg = (pos.avgPrice * pos.shares + (shares * execPrice)) / newTotal;
             newPositions[existingIdx] = { ...pos, shares: newTotal, avgPrice: newAvg };
           } else {
-            newPositions.push({ symbol: selectedSymbol, shares, avgPrice: price });
+            newPositions.push({ symbol, shares, avgPrice: execPrice });
           }
           
           const executed: ExecutedOrder = {
-            id: Math.random().toString(36).substr(2, 9),
-            symbol: selectedSymbol,
+            orderId: generateOrderId(),
+            symbol,
             side: 'BUY',
             type: 'MARKET',
             shares,
-            price: selectedStock.price,
+            price: execPrice,
             timestamp: Date.now()
           };
 
           return { 
             ...prev, 
-            balance: prev.balance - totalValueAtTarget, 
+            balance: prev.balance - (shares * execPrice), 
             positions: newPositions,
             history: [...prev.history, executed]
           };
         });
       } else {
         const newOrder: PendingOrder = {
-          id: Math.random().toString(36).substr(2, 9),
-          symbol: selectedSymbol,
+          orderId: generateOrderId(),
+          symbol,
           side: 'BUY',
           type: 'LIMIT',
           shares,
@@ -263,54 +329,52 @@ const App: React.FC = () => {
         };
         setPortfolio(prev => ({
           ...prev,
-          balance: prev.balance - totalValueAtTarget,
+          balance: prev.balance - totalValue,
           pendingOrders: [...prev.pendingOrders, newOrder]
         }));
       }
     } else {
-      const existingPos = portfolio.positions.find(p => p.symbol === selectedSymbol);
-      if (!existingPos || existingPos.shares < shares) {
-        alert("Insufficient shares in active position!");
-        return;
-      }
-
       if (orderType === 'MARKET') {
         setPortfolio(prev => {
+          const execPrice = selectedStock.price;
           const newPositions = prev.positions.map(p => {
-            if (p.symbol === selectedSymbol) return { ...p, shares: p.shares - shares };
+            if (p.symbol === symbol) return { ...p, shares: p.shares - shares };
             return p;
           }).filter(p => p.shares > 0);
 
           const executed: ExecutedOrder = {
-            id: Math.random().toString(36).substr(2, 9),
-            symbol: selectedSymbol,
+            orderId: generateOrderId(),
+            symbol,
             side: 'SELL',
             type: 'MARKET',
             shares,
-            price: selectedStock.price,
+            price: execPrice,
             timestamp: Date.now()
           };
 
           return { 
             ...prev, 
-            balance: prev.balance + (shares * selectedStock.price), 
+            balance: prev.balance + (shares * execPrice), 
             positions: newPositions,
             history: [...prev.history, executed]
           };
         });
       } else {
         const newOrder: PendingOrder = {
-          id: Math.random().toString(36).substr(2, 9),
-          symbol: selectedSymbol,
+          orderId: generateOrderId(),
+          symbol,
           side: 'SELL',
           type: orderType,
           shares,
           limitPrice: price,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          isTrailing: isTrailing,
+          trailingAmount: trailingAmount,
+          highestPriceObserved: isTrailing ? selectedStock.price : undefined
         };
         setPortfolio(prev => {
           const newPositions = prev.positions.map(p => {
-            if (p.symbol === selectedSymbol) return { ...p, shares: p.shares - shares };
+            if (p.symbol === symbol) return { ...p, shares: p.shares - shares };
             return p;
           }).filter(p => p.shares > 0);
           return {
@@ -323,11 +387,12 @@ const App: React.FC = () => {
     }
     setTradeAmount("");
     setLimitPrice("");
+    setPendingTrade(null);
   };
 
   const cancelOrder = (orderId: string) => {
     setPortfolio(prev => {
-      const order = prev.pendingOrders.find(o => o.id === orderId);
+      const order = prev.pendingOrders.find(o => o.orderId === orderId);
       if (!order) return prev;
 
       let newBalance = prev.balance;
@@ -348,9 +413,15 @@ const App: React.FC = () => {
         ...prev,
         balance: newBalance,
         positions: newPositions,
-        pendingOrders: prev.pendingOrders.filter(o => o.id !== orderId)
+        pendingOrders: prev.pendingOrders.filter(o => o.orderId !== orderId)
       };
     });
+  };
+
+  const handleQuickAmount = (percent: number) => {
+    const price = (orderType !== 'MARKET' ? parseFloat(limitPrice) || selectedStock.price : selectedStock.price);
+    const maxShares = Math.floor(portfolio.balance / price);
+    setTradeAmount((maxShares * percent).toString());
   };
 
   return (
@@ -364,12 +435,11 @@ const App: React.FC = () => {
 
       <main className="flex-1 flex flex-col p-8 overflow-y-auto">
         <div className="grid grid-cols-3 gap-8 mb-8">
-          {/* Portfolio Performance Overview */}
           <section className="col-span-3 bg-slate-900/40 border border-slate-800 p-6 rounded-3xl shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-6 flex items-center gap-3">
               <div className="flex items-center gap-2 px-3 py-1 bg-slate-800/80 backdrop-blur rounded-full border border-slate-700">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-time Data</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Market Live</span>
               </div>
             </div>
             
@@ -390,7 +460,7 @@ const App: React.FC = () => {
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-8 items-center">
                 <div className="space-y-1 border-l border-slate-800 pl-4">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cash Balance</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cash</span>
                   <p className="text-lg font-mono text-slate-200">${portfolio.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div className="space-y-1 border-l border-slate-800 pl-4">
@@ -398,7 +468,7 @@ const App: React.FC = () => {
                   <p className="text-lg font-mono text-slate-200">${investedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div className="space-y-1 border-l border-slate-800 pl-4 hidden md:block">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Return</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total P&L</span>
                   <p className={`text-lg font-mono font-bold ${totalGainLoss >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {totalGainLoss >= 0 ? '+' : ''}{gainLossPercent.toFixed(2)}%
                   </p>
@@ -441,16 +511,6 @@ const App: React.FC = () => {
         <div className="grid grid-cols-3 gap-8 mb-8">
           <div className="col-span-2 space-y-8">
             <section className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 shadow-lg">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-semibold text-white">Price History</h3>
-                <div className="flex gap-2">
-                  {['1H', '1D', '1W', '1M'].map(t => (
-                    <button key={t} className={`px-3 py-1 text-xs rounded-md ${t === '1D' ? 'bg-emerald-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <StockChart stock={selectedStock} />
             </section>
 
@@ -471,7 +531,7 @@ const App: React.FC = () => {
                 {isAnalyzing ? (
                   <div className="flex flex-col gap-4 py-8 items-center justify-center">
                     <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-                    <p className="text-slate-400 text-sm italic">Analyzing technical markers and sentiment data...</p>
+                    <p className="text-slate-400 text-sm italic">Synthesizing insights...</p>
                   </div>
                 ) : aiInsight ? (
                   <div className="space-y-6">
@@ -523,117 +583,154 @@ const App: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-white">Trade {selectedSymbol}</h3>
-                <div className="flex p-1 bg-slate-800 rounded-lg overflow-x-auto no-scrollbar">
-                  {['MARKET', 'LIMIT', 'STOP_LOSS'].map((type) => (
+            {/* TRADE FORM SECTION */}
+            <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-rose-500/5 opacity-50"></div>
+              
+              <div className="relative">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-6">
+                  <div className="w-2 h-5 bg-emerald-500 rounded-full"></div>
+                  Trade Execution
+                </h3>
+
+                {/* DISTINCT ORDER TYPE SELECTOR */}
+                <div className="grid grid-cols-3 gap-2 mb-4 p-1.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 backdrop-blur-md">
+                  {(['MARKET', 'LIMIT', 'STOP_LOSS'] as OrderType[]).map((type) => (
                     <button 
                       key={type}
-                      onClick={() => setOrderType(type as OrderType)}
-                      className={`px-3 py-1 text-[9px] font-bold uppercase rounded-md transition-all whitespace-nowrap ${
-                        orderType === type ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                      onClick={() => {
+                        setOrderType(type);
+                        if (type !== 'STOP_LOSS') setIsTrailing(false);
+                      }}
+                      className={`py-3 px-1 text-[10px] font-bold uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-1 ${
+                        orderType === type 
+                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' 
+                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
                       }`}
                     >
-                      {type.replace('_', ' ')}
+                      <span className="tracking-tighter">{type.replace('_', ' ')}</span>
+                      {orderType === type && <div className="w-1 h-1 bg-slate-950 rounded-full"></div>}
                     </button>
                   ))}
                 </div>
-              </div>
-              
-              <div className="space-y-4">
-                {orderType !== 'MARKET' && (
-                  <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
-                      {orderType === 'LIMIT' ? 'Limit Price' : 'Stop Price'}
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
-                      <input 
-                        type="number" 
-                        value={limitPrice}
-                        onChange={(e) => setLimitPrice(e.target.value)}
-                        placeholder={selectedStock.price.toFixed(2)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-8 pr-4 py-3 text-xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-                      />
-                    </div>
+
+                {/* TRAILING TOGGLE */}
+                {orderType === 'STOP_LOSS' && (
+                  <div className="flex items-center justify-between px-2 mb-6 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Trailing Stop</span>
+                    <button 
+                      onClick={() => setIsTrailing(!isTrailing)}
+                      className={`w-10 h-5 rounded-full relative transition-colors ${isTrailing ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isTrailing ? 'left-6' : 'left-1'}`} />
+                    </button>
                   </div>
                 )}
+                
+                <div className="space-y-6">
+                  {orderType !== 'MARKET' && (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
+                          {orderType === 'LIMIT' ? 'Limit Price' : (isTrailing ? 'Trailing Amount ($)' : 'Stop Price')}
+                        </label>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
+                        <input 
+                          type="number" 
+                          value={limitPrice}
+                          onChange={(e) => setLimitPrice(e.target.value)}
+                          placeholder={isTrailing ? "5.00" : selectedStock.price.toFixed(2)}
+                          className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl pl-8 pr-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all placeholder:text-slate-700"
+                        />
+                      </div>
+                      {isTrailing && (
+                        <p className="text-[9px] text-slate-500 mt-2 italic">Stop price will track {limitPrice || '0'} below current peak.</p>
+                      )}
+                    </div>
+                  )}
 
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">Shares</label>
-                  <input 
-                    type="number" 
-                    value={tradeAmount}
-                    onChange={(e) => setTradeAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-                  />
-                </div>
-
-                <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Estimated Value</span>
-                    <span className="text-slate-200 font-mono">
-                      ${((parseFloat(tradeAmount) || 0) * (orderType !== 'MARKET' ? (parseFloat(limitPrice) || selectedStock.price) : selectedStock.price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Amount (Shares)</label>
+                      <div className="flex gap-2">
+                        {[0.25, 0.5, 1].map((p) => (
+                          <button 
+                            key={p}
+                            onClick={() => handleQuickAmount(p)}
+                            className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-500 text-[9px] font-bold hover:text-emerald-400 transition-colors border border-slate-700/50"
+                          >
+                            {p === 1 ? 'MAX' : `${p * 100}%`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <input 
+                      type="number" 
+                      value={tradeAmount}
+                      onChange={(e) => setTradeAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl px-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all placeholder:text-slate-700"
+                    />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  <button 
-                    onClick={() => handleTrade('BUY')}
-                    disabled={orderType === 'STOP_LOSS'}
-                    className={`font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 ${
-                      orderType === 'STOP_LOSS' 
-                        ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700' 
-                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 10l7-7 7 7M12 3v18" />
-                    </svg>
-                    <span>{orderType === 'LIMIT' ? 'Limit Buy' : 'Buy'}</span>
-                  </button>
-                  <button 
-                    onClick={() => handleTrade('SELL')}
-                    className={`font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 ${
-                      orderType === 'STOP_LOSS'
-                        ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
-                        : 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 14l-7 7-7-7M12 21V3" />
-                    </svg>
-                    <span>{orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? 'Stop Loss' : 'Sell'}</span>
-                  </button>
+                  <div className="bg-slate-800/40 p-5 rounded-2xl border border-slate-700/30 space-y-3 backdrop-blur-sm">
+                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
+                      <span className="text-slate-500">Value Assessment</span>
+                      <span className="text-white font-mono">
+                        ${((parseFloat(tradeAmount) || 0) * (orderType !== 'MARKET' ? (isTrailing ? selectedStock.price : parseFloat(limitPrice) || selectedStock.price) : selectedStock.price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 pt-4">
+                    <button 
+                      onClick={() => handleTrade('BUY')}
+                      disabled={orderType === 'STOP_LOSS'}
+                      className={`font-bold py-5 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 ${
+                        orderType === 'STOP_LOSS' 
+                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700 opacity-50' 
+                          : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/10'
+                      }`}
+                    >
+                      <span className="text-[10px] uppercase tracking-widest opacity-70">Long</span>
+                      <span className="text-base">{orderType === 'LIMIT' ? 'Limit Buy' : 'Instant Buy'}</span>
+                    </button>
+                    <button 
+                      onClick={() => handleTrade('SELL')}
+                      className={`font-bold py-5 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 ${
+                        orderType === 'STOP_LOSS'
+                          ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/10'
+                          : 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/10'
+                      }`}
+                    >
+                      <span className="text-[10px] uppercase tracking-widest opacity-70">Short</span>
+                      <span className="text-base">{orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? (isTrailing ? 'Trailing Stop' : 'Stop Loss') : 'Instant Sell'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
 
             <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Your Position</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">Position in {selectedSymbol}</h3>
               {currentPosition ? (
                 <div className="space-y-4">
                   <div className="flex justify-between items-end border-b border-slate-800 pb-4">
                     <div>
-                      <p className="text-xs text-slate-500 uppercase font-bold tracking-tighter">Shares</p>
-                      <p className="text-2xl font-mono text-white">{currentPosition.shares}</p>
+                      <p className="text-xs text-slate-500 uppercase font-bold tracking-tighter">Ownership</p>
+                      <p className="text-2xl font-mono text-white">{currentPosition.shares} Shares</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-slate-500 uppercase font-bold tracking-tighter">Avg Price</p>
+                      <p className="text-xs text-slate-500 uppercase font-bold tracking-tighter">Cost Basis</p>
                       <p className="text-xl font-mono text-slate-300">${currentPosition.avgPrice.toFixed(2)}</p>
                     </div>
                   </div>
                   
                   <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Market Value</span>
-                      <span className="text-white font-mono">${(currentPosition.shares * selectedStock.price).toLocaleString()}</span>
-                    </div>
                     <div className={`flex justify-between text-sm`}>
-                      <span className="text-slate-500">Total Return</span>
+                      <span className="text-slate-500">Unrealized P&L</span>
                       <span className={`font-mono font-bold ${
                         selectedStock.price >= currentPosition.avgPrice ? 'text-emerald-400' : 'text-rose-400'
                       }`}>
@@ -644,40 +741,15 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-slate-500 text-sm">No active position for {selectedSymbol}.</p>
+                  <p className="text-slate-500 text-sm">No position in {selectedSymbol}.</p>
                 </div>
               )}
             </section>
 
-            {portfolio.pendingOrders.length > 0 && (
-              <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
-                <h3 className="text-lg font-semibold text-white mb-4">Pending Orders</h3>
-                <div className="space-y-2">
-                  {portfolio.pendingOrders.map(order => (
-                    <div key={order.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700">
-                      <div className="flex items-center gap-4">
-                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest ${
-                          order.type === 'STOP_LOSS' ? 'bg-amber-500/20 text-amber-400' : 
-                          order.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                        }`}>
-                          {order.type === 'STOP_LOSS' ? 'STOP SELL' : order.side + ' ' + order.type}
-                        </span>
-                        <div>
-                          <p className="text-sm font-bold text-white">{order.symbol} <span className="text-slate-500 font-normal">x {order.shares}</span></p>
-                          <p className="text-xs text-slate-400">{order.type === 'STOP_LOSS' ? 'Stop Price' : 'Target Price'}: <span className="font-mono text-slate-200">${order.limitPrice.toFixed(2)}</span></p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => cancelOrder(order.id)}
-                        className="text-xs text-rose-400 hover:text-rose-300 font-medium px-3 py-1 rounded border border-rose-400/20 hover:bg-rose-400/10 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+            <PendingOrders 
+              orders={portfolio.pendingOrders} 
+              onCancel={cancelOrder} 
+            />
           </div>
         </div>
 
@@ -685,6 +757,13 @@ const App: React.FC = () => {
           <TradeHistory history={portfolio.history} />
         </section>
       </main>
+
+      <ConfirmationModal 
+        isOpen={pendingTrade !== null}
+        onClose={() => setPendingTrade(null)}
+        onConfirm={executeTrade}
+        tradeInfo={pendingTrade}
+      />
     </div>
   );
 };

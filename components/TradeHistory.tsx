@@ -35,7 +35,7 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history }) => {
           <tbody className="divide-y divide-slate-800/50">
             {history.length > 0 ? (
               [...history].reverse().map((order) => (
-                <tr key={order.id} className="hover:bg-slate-800/20 transition-colors">
+                <tr key={order.orderId} className="hover:bg-slate-800/20 transition-colors">
                   <td className="px-6 py-4 font-bold font-mono text-slate-200">{order.symbol}</td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-widest ${
