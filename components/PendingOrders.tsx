@@ -90,13 +90,13 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
         </div>
       )}
 
-      <div className="divide-y divide-slate-800 max-h-[400px] overflow-y-auto">
+      <div className="divide-y divide-slate-800 max-h-[480px] overflow-y-auto">
         {filteredOrders.length > 0 ? (
           filteredOrders.map((order) => (
-            <div key={order.orderId} className="p-4 hover:bg-slate-800/30 transition-colors group">
-              <div className="flex items-center justify-between mb-2">
+            <div key={order.orderId} className="p-5 hover:bg-slate-800/30 transition-colors group">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <span className="font-mono font-bold text-white text-base">{order.symbol}</span>
+                  <span className="font-mono font-bold text-white text-base tracking-tight">{order.symbol}</span>
                   <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase ${
                     order.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
                   }`}>
@@ -114,61 +114,70 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                 </div>
                 <button 
                   onClick={() => onCancel(order.orderId)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-rose-400 hover:text-rose-300 font-bold uppercase tracking-tighter"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-rose-500/10 text-rose-400 transition-all"
+                  title="Cancel Order"
                 >
-                  Cancel
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter mb-0.5">Order Type</p>
-                  <p className="text-xs text-slate-300 font-medium">{order.type.replace('_', ' ')}</p>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Order Details</p>
+                    <p className="text-xs text-slate-300 font-medium">{order.type.replace('_', ' ')} • {order.shares} Shares</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Status</p>
+                    <p className="text-xs text-amber-500 font-bold uppercase tracking-tighter italic">Tracking Market...</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter mb-0.5">Quantity</p>
-                  <p className="text-xs text-slate-300 font-mono">{order.shares} Shares</p>
-                </div>
-                
-                <div className="col-span-2 mt-2 pt-2 border-t border-slate-800/50">
-                  <div className="flex justify-between items-start">
+
+                <div className="bg-slate-950/50 rounded-xl p-4 border border-slate-800/50">
+                  <div className="flex justify-between items-end">
                     <div>
-                      <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter mb-0.5">
+                      <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">
                         {order.isTrailing ? 'Live Stop Price' : 'Activation Price'}
                       </p>
-                      <p className={`text-lg font-mono font-bold ${order.type === 'STOP_LOSS' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      <p className={`text-2xl font-mono font-bold ${order.isTrailing ? 'text-amber-400' : 'text-emerald-400'}`}>
                         ${order.limitPrice.toFixed(2)}
                       </p>
                     </div>
                     
                     {order.isTrailing && (
-                      <div className="text-right space-y-1">
-                        <div className="flex flex-col items-end">
-                          <span className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">Trailing Amount</span>
-                          <span className="text-xs text-amber-500 font-mono font-bold">${order.trailingAmount?.toFixed(2)}</span>
-                        </div>
-                        <div className="flex flex-col items-end pt-1">
-                          <span className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">Peak Observed</span>
-                          <span className="text-xs text-slate-300 font-mono font-bold">${order.highestPriceObserved?.toFixed(2) || 'N/A'}</span>
+                      <div className="text-right">
+                        <div className="space-y-2">
+                          <div className="flex flex-col items-end">
+                            <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Trailing Offset</span>
+                            <span className="text-xs text-amber-500/80 font-mono font-bold">
+                              {order.trailingType === 'PERCENT' ? `-${order.trailingAmount?.toFixed(2)}%` : `-$${order.trailingAmount?.toFixed(2)}`}
+                            </span>
+                          </div>
+                          <div className="flex flex-col items-end border-t border-slate-800 pt-1">
+                            <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Peak Price</span>
+                            <span className="text-xs text-slate-300 font-mono font-bold">${order.highestPriceObserved?.toFixed(2)}</span>
+                          </div>
                         </div>
                       </div>
                     )}
                   </div>
                 </div>
-              </div>
-              
-              {!order.isTrailing && (
-                <div className="mt-3 text-right">
-                   <p className="text-[9px] text-slate-600 font-mono italic">
-                    Placed: {new Date(order.timestamp).toLocaleTimeString()}
-                  </p>
+
+                <div className="flex justify-between items-center text-[9px] font-mono text-slate-600">
+                  <span>ID: {order.orderId.substring(0, 8)}...</span>
+                  <span>{new Date(order.timestamp).toLocaleTimeString()}</span>
                 </div>
-              )}
+              </div>
             </div>
           ))
         ) : (
-          <div className="p-8 text-center text-slate-600 italic text-xs">
-            No pending orders found matching the filters.
+          <div className="p-12 text-center text-slate-600">
+            <svg className="w-8 h-8 mx-auto mb-3 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="italic text-xs">No matching orders found.</p>
           </div>
         )}
       </div>

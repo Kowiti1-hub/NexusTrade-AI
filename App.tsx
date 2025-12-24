@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StockData, Portfolio, MarketInsight, Position, PendingOrder, OrderSide, OrderType, NewsArticle, PortfolioHistoryPoint, ExecutedOrder } from './types';
+import { StockData, Portfolio, MarketInsight, Position, PendingOrder, OrderSide, OrderType, NewsArticle, PortfolioHistoryPoint, ExecutedOrder, TrailingType } from './types';
 import { INITIAL_STOCKS, INITIAL_BALANCE } from './constants';
 import Sidebar from './components/Sidebar';
 import StockChart from './components/StockChart';
@@ -53,6 +53,7 @@ const App: React.FC = () => {
   const [orderType, setOrderType] = useState<OrderType>('MARKET');
   const [limitPrice, setLimitPrice] = useState<string>("");
   const [isTrailing, setIsTrailing] = useState<boolean>(false);
+  const [trailingType, setTrailingType] = useState<TrailingType>('FIXED');
 
   // Confirmation Modal State
   const [pendingTrade, setPendingTrade] = useState<{
@@ -63,6 +64,7 @@ const App: React.FC = () => {
     orderType: OrderType;
     totalValue: number;
     isTrailing?: boolean;
+    trailingType?: TrailingType;
     trailingAmount?: number;
   } | null>(null);
 
@@ -144,7 +146,11 @@ const App: React.FC = () => {
         if (stock.price > (order.highestPriceObserved || 0)) {
           stateChanged = true;
           const newHighest = stock.price;
-          const newStopPrice = newHighest - (order.trailingAmount || 0);
+          const offset = order.trailingAmount || 0;
+          const newStopPrice = order.trailingType === 'PERCENT' 
+            ? newHighest * (1 - offset / 100)
+            : newHighest - offset;
+          
           return {
             ...order,
             highestPriceObserved: newHighest,
@@ -240,13 +246,18 @@ const App: React.FC = () => {
 
   const handleTrade = (side: OrderSide) => {
     const shares = parseFloat(tradeAmount);
-    let price = (orderType === 'LIMIT' || orderType === 'STOP_LOSS') ? parseFloat(limitPrice) : selectedStock.price;
+    const amountVal = parseFloat(limitPrice);
+    let price = (orderType === 'LIMIT' || orderType === 'STOP_LOSS') ? amountVal : selectedStock.price;
 
     if (isNaN(shares) || shares <= 0) return;
     if (orderType !== 'MARKET' && (isNaN(price) || price <= 0)) return;
 
     if (orderType === 'STOP_LOSS' && isTrailing) {
-      price = selectedStock.price - price; 
+      if (trailingType === 'PERCENT') {
+        price = selectedStock.price * (1 - amountVal / 100);
+      } else {
+        price = selectedStock.price - amountVal;
+      }
     }
 
     if (orderType === 'STOP_LOSS' && side === 'BUY') {
@@ -277,13 +288,14 @@ const App: React.FC = () => {
       orderType,
       totalValue,
       isTrailing,
-      trailingAmount: isTrailing ? parseFloat(limitPrice) : undefined
+      trailingType: isTrailing ? trailingType : undefined,
+      trailingAmount: isTrailing ? amountVal : undefined
     });
   };
 
   const executeTrade = () => {
     if (!pendingTrade) return;
-    const { side, shares, price, orderType, symbol, totalValue, isTrailing, trailingAmount } = pendingTrade;
+    const { side, shares, price, orderType, symbol, totalValue, isTrailing, trailingAmount, trailingType } = pendingTrade;
 
     if (side === 'BUY') {
       if (orderType === 'MARKET') {
@@ -369,6 +381,7 @@ const App: React.FC = () => {
           limitPrice: price,
           timestamp: Date.now(),
           isTrailing: isTrailing,
+          trailingType: trailingType,
           trailingAmount: trailingAmount,
           highestPriceObserved: isTrailing ? selectedStock.price : undefined
         };
@@ -614,16 +627,36 @@ const App: React.FC = () => {
                   ))}
                 </div>
 
-                {/* TRAILING TOGGLE */}
+                {/* TRAILING TOGGLE & UNIT SELECTOR */}
                 {orderType === 'STOP_LOSS' && (
-                  <div className="flex items-center justify-between px-2 mb-6 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Trailing Stop</span>
-                    <button 
-                      onClick={() => setIsTrailing(!isTrailing)}
-                      className={`w-10 h-5 rounded-full relative transition-colors ${isTrailing ? 'bg-emerald-500' : 'bg-slate-700'}`}
-                    >
-                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isTrailing ? 'left-6' : 'left-1'}`} />
-                    </button>
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center justify-between px-2 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Trailing Stop</span>
+                      <button 
+                        onClick={() => setIsTrailing(!isTrailing)}
+                        className={`w-10 h-5 rounded-full relative transition-colors ${isTrailing ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                      >
+                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isTrailing ? 'left-6' : 'left-1'}`} />
+                      </button>
+                    </div>
+
+                    {isTrailing && (
+                      <div className="grid grid-cols-2 gap-2 p-1 bg-slate-800/60 rounded-xl border border-slate-700/30 animate-in fade-in slide-in-from-top-1 duration-200">
+                        {(['FIXED', 'PERCENT'] as TrailingType[]).map((type) => (
+                          <button
+                            key={type}
+                            onClick={() => setTrailingType(type)}
+                            className={`py-1.5 text-[9px] font-bold uppercase rounded-lg transition-all ${
+                              trailingType === type 
+                                ? 'bg-slate-700 text-amber-400 border border-amber-500/20' 
+                                : 'text-slate-500 hover:text-slate-300'
+                            }`}
+                          >
+                            {type === 'FIXED' ? 'Fixed ($)' : 'Percent (%)'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -632,21 +665,25 @@ const App: React.FC = () => {
                     <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                       <div className="flex justify-between items-center mb-2">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
-                          {orderType === 'LIMIT' ? 'Limit Price' : (isTrailing ? 'Trailing Amount ($)' : 'Stop Price')}
+                          {orderType === 'LIMIT' ? 'Limit Price' : (isTrailing ? (trailingType === 'FIXED' ? 'Trailing Amount ($)' : 'Trailing Offset (%)') : 'Stop Price')}
                         </label>
                       </div>
                       <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">
+                          {trailingType === 'PERCENT' && isTrailing ? '%' : '$'}
+                        </span>
                         <input 
                           type="number" 
                           value={limitPrice}
                           onChange={(e) => setLimitPrice(e.target.value)}
-                          placeholder={isTrailing ? "5.00" : selectedStock.price.toFixed(2)}
+                          placeholder={isTrailing ? (trailingType === 'PERCENT' ? "5.00" : "10.00") : selectedStock.price.toFixed(2)}
                           className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl pl-8 pr-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all placeholder:text-slate-700"
                         />
                       </div>
                       {isTrailing && (
-                        <p className="text-[9px] text-slate-500 mt-2 italic">Stop price will track {limitPrice || '0'} below current peak.</p>
+                        <p className="text-[9px] text-slate-500 mt-2 italic">
+                          Stop price will track {limitPrice || '0'}{trailingType === 'PERCENT' ? '%' : '$'} below current peak.
+                        </p>
                       )}
                     </div>
                   )}
@@ -754,7 +791,7 @@ const App: React.FC = () => {
         </div>
 
         <section className="mb-8">
-          <TradeHistory history={portfolio.history} />
+          <TradeHistory history={portfolio.history} stocks={stocks} />
         </section>
       </main>
 

@@ -13,6 +13,8 @@ interface ConfirmationModalProps {
     price: number;
     orderType: OrderType;
     totalValue: number;
+    isTrailing?: boolean;
+    trailingAmount?: number;
   } | null;
 }
 
@@ -50,7 +52,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
             <div className="flex justify-between items-center">
               <span className="text-slate-400 text-sm font-medium uppercase tracking-wider">Transaction</span>
               <span className={`font-bold px-3 py-1 rounded-full text-xs tracking-widest ${isBuy ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                {tradeInfo.side} {tradeInfo.orderType}
+                {tradeInfo.side} {tradeInfo.isTrailing ? 'TRAILING STOP' : tradeInfo.orderType}
               </span>
             </div>
 
@@ -64,15 +66,22 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
               <span className="text-white font-mono text-lg">{tradeInfo.shares} Shares</span>
             </div>
 
+            {tradeInfo.isTrailing && (
+               <div className="flex justify-between items-center border-t border-slate-700 pt-4">
+                <span className="text-slate-400 text-sm font-medium uppercase tracking-wider">Trailing Offset</span>
+                <span className="text-amber-400 font-mono text-lg">${tradeInfo.trailingAmount?.toFixed(2)}</span>
+              </div>
+            )}
+
             <div className="flex justify-between items-center border-t border-slate-700 pt-4">
               <span className="text-slate-400 text-sm font-medium uppercase tracking-wider">
-                {tradeInfo.orderType === 'MARKET' ? 'Market Price' : 'Target Price'}
+                {tradeInfo.orderType === 'MARKET' ? 'Market Price' : (tradeInfo.isTrailing ? 'Initial Stop' : 'Target Price')}
               </span>
               <span className="text-white font-mono text-lg">${tradeInfo.price.toFixed(2)}</span>
             </div>
 
             <div className="flex justify-between items-center border-t border-slate-700 pt-4">
-              <span className="text-slate-400 text-sm font-bold uppercase tracking-widest">Total Cost</span>
+              <span className="text-slate-400 text-sm font-bold uppercase tracking-widest">Total Value</span>
               <span className={`text-xl font-mono font-bold ${isBuy ? 'text-emerald-400' : 'text-rose-400'}`}>
                 ${tradeInfo.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
@@ -94,8 +103,8 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
             </button>
           </div>
           
-          <p className="text-[10px] text-slate-500 mt-6 text-center italic">
-            Please verify all details. Once confirmed, {tradeInfo.orderType === 'MARKET' ? 'the trade will execute immediately' : 'the order will be placed in your pending list'}.
+          <p className="text-[10px] text-slate-500 mt-6 text-center italic leading-relaxed">
+            Please verify all details. {tradeInfo.isTrailing ? 'Your stop price will move automatically as the stock price reaches new highs.' : tradeInfo.orderType === 'MARKET' ? 'This trade will execute at the best available price.' : 'The order will wait until your target price is reached.'}
           </p>
         </div>
       </div>
