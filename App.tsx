@@ -1,11 +1,28 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StockData, Portfolio, MarketInsight, Position, PendingOrder, OrderSide, OrderType, NewsArticle } from './types';
+import { StockData, Portfolio, MarketInsight, Position, PendingOrder, OrderSide, OrderType, NewsArticle, PortfolioHistoryPoint, ExecutedOrder } from './types';
 import { INITIAL_STOCKS, INITIAL_BALANCE } from './constants';
 import Sidebar from './components/Sidebar';
 import StockChart from './components/StockChart';
 import NewsFeed from './components/NewsFeed';
+import PortfolioChart from './components/PortfolioChart';
+import TradeHistory from './components/TradeHistory';
 import { getMarketAnalysis, getStockNews } from './services/geminiService';
+
+const generateInitialPortfolioHistory = (currentBalance: number): PortfolioHistoryPoint[] => {
+  const history: PortfolioHistoryPoint[] = [];
+  let val = currentBalance;
+  const now = new Date();
+  for (let i = 24; i >= 0; i--) {
+    const time = new Date(now.getTime() - i * 3600000);
+    val = val * (1 + (Math.random() - 0.5) * 0.01);
+    history.push({
+      time: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      value: val
+    });
+  }
+  return history;
+};
 
 const App: React.FC = () => {
   const [stocks, setStocks] = useState<StockData[]>(INITIAL_STOCKS);
@@ -13,8 +30,10 @@ const App: React.FC = () => {
   const [portfolio, setPortfolio] = useState<Portfolio>({
     balance: INITIAL_BALANCE,
     positions: [],
-    pendingOrders: []
+    pendingOrders: [],
+    history: []
   });
+  const [portfolioHistory, setPortfolioHistory] = useState<PortfolioHistoryPoint[]>(() => generateInitialPortfolioHistory(INITIAL_BALANCE));
   const [aiInsight, setAiInsight] = useState<MarketInsight | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [news, setNews] = useState<NewsArticle[]>([]);
@@ -26,15 +45,41 @@ const App: React.FC = () => {
   const [limitPrice, setLimitPrice] = useState<string>("");
 
   const selectedStock = stocks.find(s => s.symbol === selectedSymbol) || stocks[0];
-  const stocksRef = useRef(stocks);
-  stocksRef.current = stocks;
+  const currentPosition = portfolio.positions.find(p => p.symbol === selectedSymbol);
+  
+  // Refs for real-time calculations without re-running intervals
+  const portfolioRef = useRef(portfolio);
+  portfolioRef.current = portfolio;
 
-  // Simulate Price Fluctuations and Check Limit/Stop Orders
+  const calculateTotalValue = (currentStocks: StockData[], currentPortfolio: Portfolio) => {
+    const positionsValue = currentPortfolio.positions.reduce((acc, pos) => {
+      const stock = currentStocks.find(s => s.symbol === pos.symbol);
+      return acc + (pos.shares * (stock?.price || 0));
+    }, 0);
+
+    const pendingOrdersValue = currentPortfolio.pendingOrders.reduce((acc, order) => {
+      if (order.side === 'BUY') return acc + (order.shares * order.limitPrice);
+      const stock = currentStocks.find(s => s.symbol === order.symbol);
+      return acc + (order.shares * (stock?.price || order.limitPrice));
+    }, 0);
+
+    return currentPortfolio.balance + positionsValue + pendingOrdersValue;
+  };
+
+  const currentTotalValue = calculateTotalValue(stocks, portfolio);
+  const totalGainLoss = currentTotalValue - INITIAL_BALANCE;
+  const gainLossPercent = (totalGainLoss / INITIAL_BALANCE) * 100;
+  const investedValue = currentTotalValue - portfolio.balance;
+
+  // REAL-TIME TICKER EFFECT
   useEffect(() => {
     const interval = setInterval(() => {
+      let updatedStocks: StockData[] = [];
+      
       setStocks(currentStocks => {
-        const nextStocks = currentStocks.map(stock => {
-          const changeFactor = 1 + (Math.random() - 0.5) * 0.005; // 0.5% max swing
+        updatedStocks = currentStocks.map(stock => {
+          // Smaller volatility (0.1%) for high-frequency updates
+          const changeFactor = 1 + (Math.random() - 0.5) * 0.001; 
           const newPrice = parseFloat((stock.price * changeFactor).toFixed(2));
           const priceDiff = newPrice - stock.price;
           const newChange = stock.change + priceDiff;
@@ -53,12 +98,20 @@ const App: React.FC = () => {
             history: newHistory
           };
         });
-        return nextStocks;
+        return updatedStocks;
       });
-    }, 5000);
+
+      // Update Portfolio History using the latest stocks and portfolio state
+      setPortfolioHistory(prev => {
+        const totalVal = calculateTotalValue(updatedStocks, portfolioRef.current);
+        const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        // Maintain a moving window of 50 points
+        return [...prev.slice(-49), { time: nowStr, value: totalVal }];
+      });
+    }, 1000); // 1-second interval for real-time feel
 
     return () => clearInterval(interval);
-  }, []);
+  }, []); // Empty dependency array means this interval persists for the life of the app
 
   // Process Limit and Stop-Loss Orders when stocks change
   useEffect(() => {
@@ -75,7 +128,6 @@ const App: React.FC = () => {
           (order.side === 'BUY' && stock.price <= order.limitPrice) ||
           (order.side === 'SELL' && stock.price >= order.limitPrice);
       } else if (order.type === 'STOP_LOSS') {
-        // Stop Loss: Sell when price falls TO or BELOW the stop price
         isTriggered = (order.side === 'SELL' && stock.price <= order.limitPrice);
       }
 
@@ -90,11 +142,24 @@ const App: React.FC = () => {
       setPortfolio(prev => {
         let newBalance = prev.balance;
         const newPositions = [...prev.positions];
+        const newHistory = [...prev.history];
 
         triggeredOrders.forEach(order => {
           const stock = stocks.find(s => s.symbol === order.symbol)!;
           const executionPrice = stock.price;
           
+          // Record to history
+          const executed: ExecutedOrder = {
+            id: Math.random().toString(36).substr(2, 9),
+            symbol: order.symbol,
+            side: order.side,
+            type: order.type,
+            shares: order.shares,
+            price: executionPrice,
+            timestamp: Date.now()
+          };
+          newHistory.push(executed);
+
           if (order.side === 'BUY') {
             const existingIdx = newPositions.findIndex(p => p.symbol === order.symbol);
             if (existingIdx >= 0) {
@@ -105,13 +170,10 @@ const App: React.FC = () => {
             } else {
               newPositions.push({ symbol: order.symbol, shares: order.shares, avgPrice: executionPrice });
             }
-            // Balance was already reserved during order placement
             const reservedAmount = order.shares * order.limitPrice;
             const actualAmount = order.shares * executionPrice;
             newBalance += (reservedAmount - actualAmount); 
           } else {
-            // Sell logic (Limit Sell or Stop Loss)
-            // Shares were already reserved/removed from active positions at placement
             newBalance += order.shares * executionPrice;
           }
         });
@@ -120,19 +182,17 @@ const App: React.FC = () => {
           ...prev,
           balance: newBalance,
           positions: newPositions,
-          pendingOrders: remainingOrders
+          pendingOrders: remainingOrders,
+          history: newHistory
         };
       });
     }
   }, [stocks, portfolio.pendingOrders]);
 
   const fetchStockData = useCallback(async (stock: StockData) => {
-    // Fetch Analysis
     setIsAnalyzing(true);
     setAiInsight(null);
     getMarketAnalysis(stock).then(setAiInsight).finally(() => setIsAnalyzing(false));
-
-    // Fetch News
     setIsNewsLoading(true);
     getStockNews(stock).then(setNews).finally(() => setIsNewsLoading(false));
   }, []);
@@ -173,7 +233,23 @@ const App: React.FC = () => {
           } else {
             newPositions.push({ symbol: selectedSymbol, shares, avgPrice: price });
           }
-          return { ...prev, balance: prev.balance - totalValueAtTarget, positions: newPositions };
+          
+          const executed: ExecutedOrder = {
+            id: Math.random().toString(36).substr(2, 9),
+            symbol: selectedSymbol,
+            side: 'BUY',
+            type: 'MARKET',
+            shares,
+            price: selectedStock.price,
+            timestamp: Date.now()
+          };
+
+          return { 
+            ...prev, 
+            balance: prev.balance - totalValueAtTarget, 
+            positions: newPositions,
+            history: [...prev.history, executed]
+          };
         });
       } else {
         const newOrder: PendingOrder = {
@@ -204,10 +280,25 @@ const App: React.FC = () => {
             if (p.symbol === selectedSymbol) return { ...p, shares: p.shares - shares };
             return p;
           }).filter(p => p.shares > 0);
-          return { ...prev, balance: prev.balance + (shares * selectedStock.price), positions: newPositions };
+
+          const executed: ExecutedOrder = {
+            id: Math.random().toString(36).substr(2, 9),
+            symbol: selectedSymbol,
+            side: 'SELL',
+            type: 'MARKET',
+            shares,
+            price: selectedStock.price,
+            timestamp: Date.now()
+          };
+
+          return { 
+            ...prev, 
+            balance: prev.balance + (shares * selectedStock.price), 
+            positions: newPositions,
+            history: [...prev.history, executed]
+          };
         });
       } else {
-        // LIMIT SELL or STOP LOSS: Reserve shares
         const newOrder: PendingOrder = {
           id: Math.random().toString(36).substr(2, 9),
           symbol: selectedSymbol,
@@ -262,32 +353,69 @@ const App: React.FC = () => {
     });
   };
 
-  const currentPosition = portfolio.positions.find(p => p.symbol === selectedSymbol);
-  const totalPortfolioValue = portfolio.balance + portfolio.positions.reduce((acc, pos) => {
-    const stock = stocks.find(s => s.symbol === pos.symbol);
-    return acc + (pos.shares * (stock?.price || 0));
-  }, 0) + portfolio.pendingOrders.reduce((acc, order) => {
-    if (order.side === 'BUY') return acc + (order.shares * order.limitPrice);
-    const stock = stocks.find(s => s.symbol === order.symbol);
-    return acc + (order.shares * (stock?.price || order.limitPrice));
-  }, 0);
-
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-200">
       <Sidebar 
         stocks={stocks} 
         selectedSymbol={selectedSymbol} 
         onSelectStock={setSelectedSymbol}
-        portfolioValue={totalPortfolioValue}
+        portfolioValue={currentTotalValue}
       />
 
       <main className="flex-1 flex flex-col p-8 overflow-y-auto">
+        <div className="grid grid-cols-3 gap-8 mb-8">
+          {/* Portfolio Performance Overview */}
+          <section className="col-span-3 bg-slate-900/40 border border-slate-800 p-6 rounded-3xl shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-6 flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-1 bg-slate-800/80 backdrop-blur rounded-full border border-slate-700">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-time Data</span>
+              </div>
+            </div>
+            
+            <div className="flex flex-col md:flex-row justify-between gap-8 mb-6">
+              <div className="space-y-1">
+                <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Net Worth</h2>
+                <div className="flex items-baseline gap-4">
+                  <span className="text-4xl font-mono font-bold text-white tracking-tight">
+                    ${currentTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <div className={`flex items-center gap-1 font-bold text-sm ${totalGainLoss >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span>{totalGainLoss >= 0 ? '▲' : '▼'}</span>
+                    <span>${Math.abs(totalGainLoss).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>({gainLossPercent.toFixed(2)}%)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-8 items-center">
+                <div className="space-y-1 border-l border-slate-800 pl-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cash Balance</span>
+                  <p className="text-lg font-mono text-slate-200">${portfolio.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                </div>
+                <div className="space-y-1 border-l border-slate-800 pl-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invested</span>
+                  <p className="text-lg font-mono text-slate-200">${investedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                </div>
+                <div className="space-y-1 border-l border-slate-800 pl-4 hidden md:block">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Return</span>
+                  <p className={`text-lg font-mono font-bold ${totalGainLoss >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {totalGainLoss >= 0 ? '+' : ''}{gainLossPercent.toFixed(2)}%
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <PortfolioChart history={portfolioHistory} />
+          </section>
+        </div>
+
         <header className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-4xl font-bold text-white mb-2">{selectedStock.name}</h1>
             <div className="flex items-center gap-4">
               <span className="bg-slate-800 text-slate-300 font-mono px-2 py-1 rounded text-sm font-bold">
-                {selectedStock.symbol}
+                {selectedSymbol}
               </span>
               <span className="text-3xl font-mono font-medium text-white">
                 ${selectedStock.price.toFixed(2)}
@@ -310,7 +438,7 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <div className="grid grid-cols-3 gap-8">
+        <div className="grid grid-cols-3 gap-8 mb-8">
           <div className="col-span-2 space-y-8">
             <section className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 shadow-lg">
               <div className="flex items-center justify-between mb-2">
@@ -325,37 +453,6 @@ const App: React.FC = () => {
               </div>
               <StockChart stock={selectedStock} />
             </section>
-
-            {/* Pending Orders Section */}
-            {portfolio.pendingOrders.length > 0 && (
-              <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
-                <h3 className="text-lg font-semibold text-white mb-4">Pending Orders</h3>
-                <div className="space-y-2">
-                  {portfolio.pendingOrders.map(order => (
-                    <div key={order.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700">
-                      <div className="flex items-center gap-4">
-                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest ${
-                          order.type === 'STOP_LOSS' ? 'bg-amber-500/20 text-amber-400' : 
-                          order.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                        }`}>
-                          {order.type === 'STOP_LOSS' ? 'STOP SELL' : order.side + ' ' + order.type}
-                        </span>
-                        <div>
-                          <p className="text-sm font-bold text-white">{order.symbol} <span className="text-slate-500 font-normal">x {order.shares}</span></p>
-                          <p className="text-xs text-slate-400">{order.type === 'STOP_LOSS' ? 'Stop Price' : 'Target Price'}: <span className="font-mono text-slate-200">${order.limitPrice.toFixed(2)}</span></p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => cancelOrder(order.id)}
-                        className="text-xs text-rose-400 hover:text-rose-300 font-medium px-3 py-1 rounded border border-rose-400/20 hover:bg-rose-400/10 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">
@@ -428,7 +525,7 @@ const App: React.FC = () => {
           <div className="space-y-6">
             <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-white">Trade {selectedStock.symbol}</h3>
+                <h3 className="text-lg font-semibold text-white">Trade {selectedSymbol}</h3>
                 <div className="flex p-1 bg-slate-800 rounded-lg overflow-x-auto no-scrollbar">
                   {['MARKET', 'LIMIT', 'STOP_LOSS'].map((type) => (
                     <button 
@@ -512,11 +609,6 @@ const App: React.FC = () => {
                     <span>{orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? 'Stop Loss' : 'Sell'}</span>
                   </button>
                 </div>
-                {orderType === 'STOP_LOSS' && (
-                  <p className="text-[10px] text-amber-500/80 leading-tight text-center italic">
-                    Stop loss orders automatically trigger a sell if the price drops to your stop price.
-                  </p>
-                )}
               </div>
             </section>
 
@@ -540,7 +632,7 @@ const App: React.FC = () => {
                       <span className="text-slate-500">Market Value</span>
                       <span className="text-white font-mono">${(currentPosition.shares * selectedStock.price).toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
+                    <div className={`flex justify-between text-sm`}>
                       <span className="text-slate-500">Total Return</span>
                       <span className={`font-mono font-bold ${
                         selectedStock.price >= currentPosition.avgPrice ? 'text-emerald-400' : 'text-rose-400'
@@ -552,12 +644,46 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-slate-500 text-sm">You don't own any active shares of {selectedStock.symbol}.</p>
+                  <p className="text-slate-500 text-sm">No active position for {selectedSymbol}.</p>
                 </div>
               )}
             </section>
+
+            {portfolio.pendingOrders.length > 0 && (
+              <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+                <h3 className="text-lg font-semibold text-white mb-4">Pending Orders</h3>
+                <div className="space-y-2">
+                  {portfolio.pendingOrders.map(order => (
+                    <div key={order.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                      <div className="flex items-center gap-4">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest ${
+                          order.type === 'STOP_LOSS' ? 'bg-amber-500/20 text-amber-400' : 
+                          order.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                        }`}>
+                          {order.type === 'STOP_LOSS' ? 'STOP SELL' : order.side + ' ' + order.type}
+                        </span>
+                        <div>
+                          <p className="text-sm font-bold text-white">{order.symbol} <span className="text-slate-500 font-normal">x {order.shares}</span></p>
+                          <p className="text-xs text-slate-400">{order.type === 'STOP_LOSS' ? 'Stop Price' : 'Target Price'}: <span className="font-mono text-slate-200">${order.limitPrice.toFixed(2)}</span></p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => cancelOrder(order.id)}
+                        className="text-xs text-rose-400 hover:text-rose-300 font-medium px-3 py-1 rounded border border-rose-400/20 hover:bg-rose-400/10 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </div>
+
+        <section className="mb-8">
+          <TradeHistory history={portfolio.history} />
+        </section>
       </main>
     </div>
   );
