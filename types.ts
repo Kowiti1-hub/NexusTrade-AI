@@ -22,7 +22,7 @@ export interface Position {
 }
 
 export type OrderSide = 'BUY' | 'SELL';
-export type OrderType = 'MARKET' | 'LIMIT';
+export type OrderType = 'MARKET' | 'LIMIT' | 'STOP_LOSS';
 
 export interface PendingOrder {
   id: string;
@@ -30,7 +30,7 @@ export interface PendingOrder {
   side: OrderSide;
   type: OrderType;
   shares: number;
-  limitPrice: number;
+  limitPrice: number; // For Stop Loss, this acts as the "Stop Price"
   timestamp: number;
 }
 

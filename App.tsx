@@ -29,7 +29,7 @@ const App: React.FC = () => {
   const stocksRef = useRef(stocks);
   stocksRef.current = stocks;
 
-  // Simulate Price Fluctuations and Check Limit Orders
+  // Simulate Price Fluctuations and Check Limit/Stop Orders
   useEffect(() => {
     const interval = setInterval(() => {
       setStocks(currentStocks => {
@@ -60,7 +60,7 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Process Limit Orders when stocks change
+  // Process Limit and Stop-Loss Orders when stocks change
   useEffect(() => {
     const triggeredOrders: PendingOrder[] = [];
     const remainingOrders: PendingOrder[] = [];
@@ -69,9 +69,15 @@ const App: React.FC = () => {
       const stock = stocks.find(s => s.symbol === order.symbol);
       if (!stock) return;
 
-      const isTriggered = 
-        (order.side === 'BUY' && stock.price <= order.limitPrice) ||
-        (order.side === 'SELL' && stock.price >= order.limitPrice);
+      let isTriggered = false;
+      if (order.type === 'LIMIT') {
+        isTriggered = 
+          (order.side === 'BUY' && stock.price <= order.limitPrice) ||
+          (order.side === 'SELL' && stock.price >= order.limitPrice);
+      } else if (order.type === 'STOP_LOSS') {
+        // Stop Loss: Sell when price falls TO or BELOW the stop price
+        isTriggered = (order.side === 'SELL' && stock.price <= order.limitPrice);
+      }
 
       if (isTriggered) {
         triggeredOrders.push(order);
@@ -99,14 +105,14 @@ const App: React.FC = () => {
             } else {
               newPositions.push({ symbol: order.symbol, shares: order.shares, avgPrice: executionPrice });
             }
+            // Balance was already reserved during order placement
             const reservedAmount = order.shares * order.limitPrice;
             const actualAmount = order.shares * executionPrice;
             newBalance += (reservedAmount - actualAmount); 
           } else {
-            const existingIdx = newPositions.findIndex(p => p.symbol === order.symbol);
-            if (existingIdx >= 0) {
-              newBalance += order.shares * executionPrice;
-            }
+            // Sell logic (Limit Sell or Stop Loss)
+            // Shares were already reserved/removed from active positions at placement
+            newBalance += order.shares * executionPrice;
           }
         });
 
@@ -137,10 +143,15 @@ const App: React.FC = () => {
 
   const handleTrade = (side: OrderSide) => {
     const shares = parseFloat(tradeAmount);
-    const price = orderType === 'LIMIT' ? parseFloat(limitPrice) : selectedStock.price;
+    const price = (orderType === 'LIMIT' || orderType === 'STOP_LOSS') ? parseFloat(limitPrice) : selectedStock.price;
 
     if (isNaN(shares) || shares <= 0) return;
-    if (orderType === 'LIMIT' && (isNaN(price) || price <= 0)) return;
+    if (orderType !== 'MARKET' && (isNaN(price) || price <= 0)) return;
+
+    if (orderType === 'STOP_LOSS' && side === 'BUY') {
+      alert("Stop loss is typically used for selling to limit losses on a position.");
+      return;
+    }
 
     const totalValueAtTarget = shares * price;
 
@@ -183,7 +194,7 @@ const App: React.FC = () => {
     } else {
       const existingPos = portfolio.positions.find(p => p.symbol === selectedSymbol);
       if (!existingPos || existingPos.shares < shares) {
-        alert("Insufficient shares!");
+        alert("Insufficient shares in active position!");
         return;
       }
 
@@ -193,14 +204,15 @@ const App: React.FC = () => {
             if (p.symbol === selectedSymbol) return { ...p, shares: p.shares - shares };
             return p;
           }).filter(p => p.shares > 0);
-          return { ...prev, balance: prev.balance + totalValueAtTarget, positions: newPositions };
+          return { ...prev, balance: prev.balance + (shares * selectedStock.price), positions: newPositions };
         });
       } else {
+        // LIMIT SELL or STOP LOSS: Reserve shares
         const newOrder: PendingOrder = {
           id: Math.random().toString(36).substr(2, 9),
           symbol: selectedSymbol,
           side: 'SELL',
-          type: 'LIMIT',
+          type: orderType,
           shares,
           limitPrice: price,
           timestamp: Date.now()
@@ -317,17 +329,20 @@ const App: React.FC = () => {
             {/* Pending Orders Section */}
             {portfolio.pendingOrders.length > 0 && (
               <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
-                <h3 className="text-lg font-semibold text-white mb-4">Pending Limit Orders</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">Pending Orders</h3>
                 <div className="space-y-2">
                   {portfolio.pendingOrders.map(order => (
                     <div key={order.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700">
                       <div className="flex items-center gap-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${order.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                          {order.side}
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-widest ${
+                          order.type === 'STOP_LOSS' ? 'bg-amber-500/20 text-amber-400' : 
+                          order.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                        }`}>
+                          {order.type === 'STOP_LOSS' ? 'STOP SELL' : order.side + ' ' + order.type}
                         </span>
                         <div>
                           <p className="text-sm font-bold text-white">{order.symbol} <span className="text-slate-500 font-normal">x {order.shares}</span></p>
-                          <p className="text-xs text-slate-400">Target: <span className="font-mono text-slate-200">${order.limitPrice.toFixed(2)}</span></p>
+                          <p className="text-xs text-slate-400">{order.type === 'STOP_LOSS' ? 'Stop Price' : 'Target Price'}: <span className="font-mono text-slate-200">${order.limitPrice.toFixed(2)}</span></p>
                         </div>
                       </div>
                       <button 
@@ -414,26 +429,27 @@ const App: React.FC = () => {
             <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-white">Trade {selectedStock.symbol}</h3>
-                <div className="flex p-1 bg-slate-800 rounded-lg">
-                  <button 
-                    onClick={() => setOrderType('MARKET')}
-                    className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${orderType === 'MARKET' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    Market
-                  </button>
-                  <button 
-                    onClick={() => setOrderType('LIMIT')}
-                    className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${orderType === 'LIMIT' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    Limit
-                  </button>
+                <div className="flex p-1 bg-slate-800 rounded-lg overflow-x-auto no-scrollbar">
+                  {['MARKET', 'LIMIT', 'STOP_LOSS'].map((type) => (
+                    <button 
+                      key={type}
+                      onClick={() => setOrderType(type as OrderType)}
+                      className={`px-3 py-1 text-[9px] font-bold uppercase rounded-md transition-all whitespace-nowrap ${
+                        orderType === type ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      {type.replace('_', ' ')}
+                    </button>
+                  ))}
                 </div>
               </div>
               
               <div className="space-y-4">
-                {orderType === 'LIMIT' && (
+                {orderType !== 'MARKET' && (
                   <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">Limit Price</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                      {orderType === 'LIMIT' ? 'Limit Price' : 'Stop Price'}
+                    </label>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
                       <input 
@@ -460,31 +476,47 @@ const App: React.FC = () => {
 
                 <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700/30 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Estimated {orderType === 'LIMIT' ? 'Value' : 'Cost'}</span>
+                    <span className="text-slate-500">Estimated Value</span>
                     <span className="text-slate-200 font-mono">
-                      ${((parseFloat(tradeAmount) || 0) * (orderType === 'LIMIT' ? (parseFloat(limitPrice) || selectedStock.price) : selectedStock.price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${((parseFloat(tradeAmount) || 0) * (orderType !== 'MARKET' ? (parseFloat(limitPrice) || selectedStock.price) : selectedStock.price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Available Balance</span>
-                    <span className="text-slate-200 font-mono">${portfolio.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <button 
                     onClick={() => handleTrade('BUY')}
-                    className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-4 rounded-xl transition-transform active:scale-95 shadow-lg shadow-emerald-500/20"
+                    disabled={orderType === 'STOP_LOSS'}
+                    className={`font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 ${
+                      orderType === 'STOP_LOSS' 
+                        ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700' 
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
+                    }`}
                   >
-                    {orderType === 'LIMIT' ? 'Limit Buy' : 'Buy'}
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 10l7-7 7 7M12 3v18" />
+                    </svg>
+                    <span>{orderType === 'LIMIT' ? 'Limit Buy' : 'Buy'}</span>
                   </button>
                   <button 
                     onClick={() => handleTrade('SELL')}
-                    className="bg-slate-800 hover:bg-rose-500 hover:text-white text-slate-200 font-bold py-4 rounded-xl transition-all active:scale-95"
+                    className={`font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 ${
+                      orderType === 'STOP_LOSS'
+                        ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
+                        : 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
+                    }`}
                   >
-                    {orderType === 'LIMIT' ? 'Limit Sell' : 'Sell'}
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 14l-7 7-7-7M12 21V3" />
+                    </svg>
+                    <span>{orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? 'Stop Loss' : 'Sell'}</span>
                   </button>
                 </div>
+                {orderType === 'STOP_LOSS' && (
+                  <p className="text-[10px] text-amber-500/80 leading-tight text-center italic">
+                    Stop loss orders automatically trigger a sell if the price drops to your stop price.
+                  </p>
+                )}
               </div>
             </section>
 
