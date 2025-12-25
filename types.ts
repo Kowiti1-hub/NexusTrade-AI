@@ -38,6 +38,7 @@ export interface ExecutedOrder {
   shares: number;
   price: number;
   timestamp: number;
+  scheduledTime?: number;
 }
 
 export interface PendingOrder {
@@ -48,6 +49,7 @@ export interface PendingOrder {
   shares: number;
   limitPrice: number; // For Stop Loss, this acts as the "Stop Price"
   timestamp: number;
+  scheduledTime?: number;
   // Trailing stop-loss fields
   isTrailing?: boolean;
   trailingType?: TrailingType;

@@ -102,6 +102,14 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                   }`}>
                     {order.side}
                   </span>
+                  {order.scheduledTime && order.scheduledTime > Date.now() && (
+                    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                       </svg>
+                       Scheduled
+                    </span>
+                  )}
                   {order.isTrailing && (
                     <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]">
                       <span className="relative flex h-1.5 w-1.5">
@@ -132,15 +140,24 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Execution</p>
-                    <p className={`text-xs font-bold uppercase tracking-tighter ${order.isTrailing ? 'text-amber-500' : 'text-emerald-500'}`}>
-                      {order.isTrailing ? 'Auto-Tracking' : 'Pending Price'}
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Status</p>
+                    <p className={`text-xs font-bold uppercase tracking-tighter ${order.scheduledTime && order.scheduledTime > Date.now() ? 'text-amber-500' : 'text-emerald-500'}`}>
+                      {order.scheduledTime && order.scheduledTime > Date.now() ? 'Waiting for Time' : 'Price Monitoring'}
                     </p>
                   </div>
                 </div>
 
+                {order.scheduledTime && order.scheduledTime > Date.now() && (
+                   <div className="bg-amber-500/5 rounded-xl p-3 border border-amber-500/10 mb-2">
+                     <p className="text-[8px] text-amber-500 uppercase font-bold tracking-widest mb-1">Triggering at</p>
+                     <p className="text-xs font-mono text-slate-200">
+                        {new Date(order.scheduledTime).toLocaleString()}
+                     </p>
+                   </div>
+                )}
+
                 <div className="bg-slate-950/50 rounded-xl p-4 border border-slate-800/50">
-                  <div className="flex justify-between items-end">
+                  <div className="flex justify-between items-center">
                     <div>
                       <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">
                         {order.isTrailing ? 'Dynamic Stop Price' : 'Trigger Price'}
@@ -151,22 +168,22 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                     </div>
                     
                     {order.isTrailing && (
-                      <div className="text-right">
-                        <div className="space-y-2">
-                          <div className="flex flex-col items-end">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                                {order.trailingType}
-                              </span>
-                              <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Offset</span>
-                            </div>
-                            <span className="text-sm text-white font-mono font-bold">
-                              {order.trailingType === 'PERCENT' ? `${order.trailingAmount?.toFixed(2)}%` : `$${order.trailingAmount?.toFixed(2)}`}
-                            </span>
+                      <div className="flex flex-col gap-3 min-w-[120px]">
+                        <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                          <div className="flex justify-between items-center gap-4 mb-2">
+                             <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Peak Observed</span>
+                             <span className="text-[10px] text-white font-mono font-bold">${order.highestPriceObserved?.toFixed(2)}</span>
                           </div>
-                          <div className="flex flex-col items-end border-t border-slate-800 pt-1">
-                            <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Market Peak</span>
-                            <span className="text-xs text-slate-300 font-mono font-bold">${order.highestPriceObserved?.toFixed(2)}</span>
+                          <div className="flex justify-between items-center gap-4">
+                             <div className="flex items-center gap-1">
+                               <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Offset</span>
+                               <span className={`text-[7px] font-black px-1 py-0.5 rounded leading-none ${order.trailingType === 'PERCENT' ? 'bg-amber-500/20 text-amber-500' : 'bg-slate-700 text-slate-400'}`}>
+                                 {order.trailingType}
+                               </span>
+                             </div>
+                             <span className="text-[10px] text-amber-400 font-mono font-bold">
+                               {order.trailingType === 'PERCENT' ? `${order.trailingAmount?.toFixed(2)}%` : `$${order.trailingAmount?.toFixed(2)}`}
+                             </span>
                           </div>
                         </div>
                       </div>
@@ -176,7 +193,7 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
 
                 <div className="flex justify-between items-center text-[9px] font-mono text-slate-600">
                   <span>ID: {order.orderId.substring(0, 8)}...</span>
-                  <span>{new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>Created: {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
               </div>
             </div>

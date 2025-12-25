@@ -54,6 +54,8 @@ const App: React.FC = () => {
   const [limitPrice, setLimitPrice] = useState<string>("");
   const [isTrailing, setIsTrailing] = useState<boolean>(false);
   const [trailingType, setTrailingType] = useState<TrailingType>('FIXED');
+  const [isScheduled, setIsScheduled] = useState<boolean>(false);
+  const [scheduledTime, setScheduledTime] = useState<string>("");
 
   // Confirmation Modal State
   const [pendingTrade, setPendingTrade] = useState<{
@@ -66,6 +68,7 @@ const App: React.FC = () => {
     isTrailing?: boolean;
     trailingType?: TrailingType;
     trailingAmount?: number;
+    scheduledTime?: number;
   } | null>(null);
 
   const selectedStock = stocks.find(s => s.symbol === selectedSymbol) || stocks[0];
@@ -81,6 +84,7 @@ const App: React.FC = () => {
     }, 0);
 
     const pendingOrdersValue = currentPortfolio.pendingOrders.reduce((acc, order) => {
+      // For scheduled orders, we still reserve the balance if it's a BUY
       if (order.side === 'BUY') return acc + (order.shares * order.limitPrice);
       const stock = currentStocks.find(s => s.symbol === order.symbol);
       return acc + (order.shares * (stock?.price || order.limitPrice));
@@ -132,30 +136,36 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Complex Order Processing Logic (Trailing & Triggers)
+  // Complex Order Processing Logic (Time, Trailing & Triggers)
   useEffect(() => {
     const triggeredOrders: PendingOrder[] = [];
     const remainingOrders: PendingOrder[] = [];
     let stateChanged = false;
 
+    const now = Date.now();
+
     const newPendingOrders = portfolio.pendingOrders.map(order => {
       const stock = stocks.find(s => s.symbol === order.symbol);
       if (!stock) return order;
 
+      // Handle Trailing Stops for already active orders
       if (order.type === 'STOP_LOSS' && order.isTrailing) {
-        if (stock.price > (order.highestPriceObserved || 0)) {
-          stateChanged = true;
-          const newHighest = stock.price;
-          const offset = order.trailingAmount || 0;
-          const newStopPrice = order.trailingType === 'PERCENT' 
-            ? newHighest * (1 - offset / 100)
-            : newHighest - offset;
-          
-          return {
-            ...order,
-            highestPriceObserved: newHighest,
-            limitPrice: newStopPrice
-          };
+        // Only trail if the scheduled time has passed
+        if (!order.scheduledTime || now >= order.scheduledTime) {
+          if (stock.price > (order.highestPriceObserved || 0)) {
+            stateChanged = true;
+            const newHighest = stock.price;
+            const offset = order.trailingAmount || 0;
+            const newStopPrice = order.trailingType === 'PERCENT' 
+              ? newHighest * (1 - offset / 100)
+              : newHighest - offset;
+            
+            return {
+              ...order,
+              highestPriceObserved: newHighest,
+              limitPrice: newStopPrice
+            };
+          }
         }
       }
       return order;
@@ -165,13 +175,21 @@ const App: React.FC = () => {
       const stock = stocks.find(s => s.symbol === order.symbol);
       if (!stock) return;
 
+      // Check if scheduled time has passed
+      const isTimeReached = !order.scheduledTime || now >= order.scheduledTime;
+      
       let isTriggered = false;
-      if (order.type === 'LIMIT') {
-        isTriggered = 
-          (order.side === 'BUY' && stock.price <= order.limitPrice) ||
-          (order.side === 'SELL' && stock.price >= order.limitPrice);
-      } else if (order.type === 'STOP_LOSS') {
-        isTriggered = (order.side === 'SELL' && stock.price <= order.limitPrice);
+      if (isTimeReached) {
+        if (order.type === 'MARKET') {
+          // Scheduled market orders trigger immediately once time is reached
+          isTriggered = true;
+        } else if (order.type === 'LIMIT') {
+          isTriggered = 
+            (order.side === 'BUY' && stock.price <= order.limitPrice) ||
+            (order.side === 'SELL' && stock.price >= order.limitPrice);
+        } else if (order.type === 'STOP_LOSS') {
+          isTriggered = (order.side === 'SELL' && stock.price <= order.limitPrice);
+        }
       }
 
       if (isTriggered) {
@@ -199,7 +217,8 @@ const App: React.FC = () => {
             type: order.type,
             shares: order.shares,
             price: executionPrice,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            scheduledTime: order.scheduledTime
           };
           newHistory.push(executed);
 
@@ -213,6 +232,7 @@ const App: React.FC = () => {
             } else {
               newPositions.push({ symbol: order.symbol, shares: order.shares, avgPrice: executionPrice });
             }
+            // Refund the difference between limit price (reserved) and execution price
             const reservedAmount = order.shares * order.limitPrice;
             const actualAmount = order.shares * executionPrice;
             newBalance += (reservedAmount - actualAmount); 
@@ -270,6 +290,12 @@ const App: React.FC = () => {
       return;
     }
 
+    const scheduledTimestamp = isScheduled && scheduledTime ? new Date(scheduledTime).getTime() : undefined;
+    if (isScheduled && (!scheduledTimestamp || scheduledTimestamp <= Date.now())) {
+      alert("Please select a valid future date and time.");
+      return;
+    }
+
     const totalValue = shares * (orderType === 'MARKET' ? selectedStock.price : (isTrailing ? selectedStock.price : price));
 
     if (side === 'BUY') {
@@ -294,20 +320,60 @@ const App: React.FC = () => {
       totalValue,
       isTrailing,
       trailingType: isTrailing ? trailingType : undefined,
-      trailingAmount: isTrailing ? amountVal : undefined
+      trailingAmount: isTrailing ? amountVal : undefined,
+      scheduledTime: scheduledTimestamp
     });
   };
 
   const executeTrade = () => {
     if (!pendingTrade) return;
-    const { side, shares, price, orderType, symbol, totalValue, isTrailing, trailingAmount, trailingType } = pendingTrade;
+    const { side, shares, price, orderType, symbol, totalValue, isTrailing, trailingAmount, trailingType, scheduledTime: tradeSchedTime } = pendingTrade;
 
-    if (side === 'BUY') {
-      if (orderType === 'MARKET') {
-        setPortfolio(prev => {
-          const existingIdx = prev.positions.findIndex(p => p.symbol === symbol);
-          const newPositions = [...prev.positions];
-          const execPrice = selectedStock.price;
+    // If it's a scheduled order, it ALWAYS goes to pending orders first
+    if (isScheduled || orderType !== 'MARKET') {
+      const newOrder: PendingOrder = {
+        orderId: generateOrderId(),
+        symbol,
+        side,
+        type: orderType,
+        shares,
+        limitPrice: price,
+        timestamp: Date.now(),
+        scheduledTime: tradeSchedTime,
+        isTrailing: isTrailing,
+        trailingType: trailingType,
+        trailingAmount: trailingAmount,
+        highestPriceObserved: isTrailing ? selectedStock.price : undefined
+      };
+
+      setPortfolio(prev => {
+        let newBalance = prev.balance;
+        let newPositions = [...prev.positions];
+
+        if (side === 'BUY') {
+          newBalance -= totalValue;
+        } else {
+          newPositions = prev.positions.map(p => {
+            if (p.symbol === symbol) return { ...p, shares: p.shares - shares };
+            return p;
+          }).filter(p => p.shares > 0);
+        }
+
+        return {
+          ...prev,
+          balance: newBalance,
+          positions: newPositions,
+          pendingOrders: [...prev.pendingOrders, newOrder]
+        };
+      });
+    } else {
+      // Instant Market Order
+      setPortfolio(prev => {
+        const execPrice = selectedStock.price;
+        let newPositions = [...prev.positions];
+        
+        if (side === 'BUY') {
+          const existingIdx = newPositions.findIndex(p => p.symbol === symbol);
           if (existingIdx >= 0) {
             const pos = newPositions[existingIdx];
             const newTotal = pos.shares + shares;
@@ -316,95 +382,36 @@ const App: React.FC = () => {
           } else {
             newPositions.push({ symbol, shares, avgPrice: execPrice });
           }
-          
-          const executed: ExecutedOrder = {
-            orderId: generateOrderId(),
-            symbol,
-            side: 'BUY',
-            type: 'MARKET',
-            shares,
-            price: execPrice,
-            timestamp: Date.now()
-          };
-
-          return { 
-            ...prev, 
-            balance: prev.balance - (shares * execPrice), 
-            positions: newPositions,
-            history: [...prev.history, executed]
-          };
-        });
-      } else {
-        const newOrder: PendingOrder = {
+        } else {
+          newPositions = prev.positions.map(p => {
+            if (p.symbol === symbol) return { ...p, shares: p.shares - shares };
+            return p;
+          }).filter(p => p.shares > 0);
+        }
+        
+        const executed: ExecutedOrder = {
           orderId: generateOrderId(),
           symbol,
-          side: 'BUY',
-          type: 'LIMIT',
+          side,
+          type: 'MARKET',
           shares,
-          limitPrice: price,
+          price: execPrice,
           timestamp: Date.now()
         };
-        setPortfolio(prev => ({
-          ...prev,
-          balance: prev.balance - totalValue,
-          pendingOrders: [...prev.pendingOrders, newOrder]
-        }));
-      }
-    } else {
-      if (orderType === 'MARKET') {
-        setPortfolio(prev => {
-          const execPrice = selectedStock.price;
-          const newPositions = prev.positions.map(p => {
-            if (p.symbol === symbol) return { ...p, shares: p.shares - shares };
-            return p;
-          }).filter(p => p.shares > 0);
 
-          const executed: ExecutedOrder = {
-            orderId: generateOrderId(),
-            symbol,
-            side: 'SELL',
-            type: 'MARKET',
-            shares,
-            price: execPrice,
-            timestamp: Date.now()
-          };
-
-          return { 
-            ...prev, 
-            balance: prev.balance + (shares * execPrice), 
-            positions: newPositions,
-            history: [...prev.history, executed]
-          };
-        });
-      } else {
-        const newOrder: PendingOrder = {
-          orderId: generateOrderId(),
-          symbol,
-          side: 'SELL',
-          type: orderType,
-          shares,
-          limitPrice: price,
-          timestamp: Date.now(),
-          isTrailing: isTrailing,
-          trailingType: trailingType,
-          trailingAmount: trailingAmount,
-          highestPriceObserved: isTrailing ? selectedStock.price : undefined
+        return { 
+          ...prev, 
+          balance: side === 'BUY' ? prev.balance - (shares * execPrice) : prev.balance + (shares * execPrice), 
+          positions: newPositions,
+          history: [...prev.history, executed]
         };
-        setPortfolio(prev => {
-          const newPositions = prev.positions.map(p => {
-            if (p.symbol === symbol) return { ...p, shares: p.shares - shares };
-            return p;
-          }).filter(p => p.shares > 0);
-          return {
-            ...prev,
-            positions: newPositions,
-            pendingOrders: [...prev.pendingOrders, newOrder]
-          };
-        });
-      }
+      });
     }
+
     setTradeAmount("");
     setLimitPrice("");
+    setIsScheduled(false);
+    setScheduledTime("");
     setPendingTrade(null);
   };
 
@@ -632,6 +639,36 @@ const App: React.FC = () => {
                   ))}
                 </div>
 
+                {/* SCHEDULING TOGGLE */}
+                <div className="space-y-3 mb-6">
+                  <div className="flex items-center justify-between px-2 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <svg className="w-3 h-3 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Schedule Trade
+                    </span>
+                    <button 
+                      onClick={() => setIsScheduled(!isScheduled)}
+                      className={`w-10 h-5 rounded-full relative transition-colors ${isScheduled ? 'bg-amber-500' : 'bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isScheduled ? 'left-6' : 'left-1'}`} />
+                    </button>
+                  </div>
+
+                  {isScheduled && (
+                    <div className="p-1 bg-slate-800/60 rounded-xl border border-slate-700/30 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <input 
+                        type="datetime-local" 
+                        value={scheduledTime}
+                        onChange={(e) => setScheduledTime(e.target.value)}
+                        className="w-full bg-transparent border-none text-[10px] font-mono font-bold text-slate-200 p-2 focus:ring-0 color-scheme-dark"
+                        style={{ colorScheme: 'dark' }}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* TRAILING TOGGLE & UNIT SELECTOR */}
                 {orderType === 'STOP_LOSS' && (
                   <div className="space-y-3 mb-6">
@@ -763,7 +800,9 @@ const App: React.FC = () => {
                       }`}
                     >
                       <span className="text-[10px] uppercase tracking-widest opacity-70">Long</span>
-                      <span className="text-base">{orderType === 'LIMIT' ? 'Limit Buy' : 'Instant Buy'}</span>
+                      <span className="text-base">
+                        {isScheduled ? 'Scheduled Buy' : (orderType === 'LIMIT' ? 'Limit Buy' : 'Instant Buy')}
+                      </span>
                     </button>
                     <button 
                       onClick={() => handleTrade('SELL')}
@@ -774,7 +813,9 @@ const App: React.FC = () => {
                       }`}
                     >
                       <span className="text-[10px] uppercase tracking-widest opacity-70">Short</span>
-                      <span className="text-base">{orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? (isTrailing ? 'Trailing Stop' : 'Stop Loss') : 'Instant Sell'}</span>
+                      <span className="text-base">
+                        {isScheduled ? 'Scheduled Sell' : (orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? (isTrailing ? 'Trailing Stop' : 'Stop Loss') : 'Instant Sell')}
+                      </span>
                     </button>
                   </div>
                 </div>
