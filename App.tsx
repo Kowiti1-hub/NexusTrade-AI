@@ -84,7 +84,6 @@ const App: React.FC = () => {
     }, 0);
 
     const pendingOrdersValue = currentPortfolio.pendingOrders.reduce((acc, order) => {
-      // For scheduled orders, we still reserve the balance if it's a BUY
       if (order.side === 'BUY') return acc + (order.shares * order.limitPrice);
       const stock = currentStocks.find(s => s.symbol === order.symbol);
       return acc + (order.shares * (stock?.price || order.limitPrice));
@@ -136,21 +135,17 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Complex Order Processing Logic (Time, Trailing & Triggers)
   useEffect(() => {
     const triggeredOrders: PendingOrder[] = [];
     const remainingOrders: PendingOrder[] = [];
     let stateChanged = false;
-
     const now = Date.now();
 
     const newPendingOrders = portfolio.pendingOrders.map(order => {
       const stock = stocks.find(s => s.symbol === order.symbol);
       if (!stock) return order;
 
-      // Handle Trailing Stops for already active orders
       if (order.type === 'STOP_LOSS' && order.isTrailing) {
-        // Only trail if the scheduled time has passed
         if (!order.scheduledTime || now >= order.scheduledTime) {
           if (stock.price > (order.highestPriceObserved || 0)) {
             stateChanged = true;
@@ -175,13 +170,10 @@ const App: React.FC = () => {
       const stock = stocks.find(s => s.symbol === order.symbol);
       if (!stock) return;
 
-      // Check if scheduled time has passed
       const isTimeReached = !order.scheduledTime || now >= order.scheduledTime;
-      
       let isTriggered = false;
       if (isTimeReached) {
         if (order.type === 'MARKET') {
-          // Scheduled market orders trigger immediately once time is reached
           isTriggered = true;
         } else if (order.type === 'LIMIT') {
           isTriggered = 
@@ -232,7 +224,6 @@ const App: React.FC = () => {
             } else {
               newPositions.push({ symbol: order.symbol, shares: order.shares, avgPrice: executionPrice });
             }
-            // Refund the difference between limit price (reserved) and execution price
             const reservedAmount = order.shares * order.limitPrice;
             const actualAmount = order.shares * executionPrice;
             newBalance += (reservedAmount - actualAmount); 
@@ -329,7 +320,6 @@ const App: React.FC = () => {
     if (!pendingTrade) return;
     const { side, shares, price, orderType, symbol, totalValue, isTrailing, trailingAmount, trailingType, scheduledTime: tradeSchedTime } = pendingTrade;
 
-    // If it's a scheduled order, it ALWAYS goes to pending orders first
     if (isScheduled || orderType !== 'MARKET') {
       const newOrder: PendingOrder = {
         orderId: generateOrderId(),
@@ -349,7 +339,6 @@ const App: React.FC = () => {
       setPortfolio(prev => {
         let newBalance = prev.balance;
         let newPositions = [...prev.positions];
-
         if (side === 'BUY') {
           newBalance -= totalValue;
         } else {
@@ -358,7 +347,6 @@ const App: React.FC = () => {
             return p;
           }).filter(p => p.shares > 0);
         }
-
         return {
           ...prev,
           balance: newBalance,
@@ -367,11 +355,9 @@ const App: React.FC = () => {
         };
       });
     } else {
-      // Instant Market Order
       setPortfolio(prev => {
         const execPrice = selectedStock.price;
         let newPositions = [...prev.positions];
-        
         if (side === 'BUY') {
           const existingIdx = newPositions.findIndex(p => p.symbol === symbol);
           if (existingIdx >= 0) {
@@ -419,10 +405,8 @@ const App: React.FC = () => {
     setPortfolio(prev => {
       const order = prev.pendingOrders.find(o => o.orderId === orderId);
       if (!order) return prev;
-
       let newBalance = prev.balance;
       const newPositions = [...prev.positions];
-
       if (order.side === 'BUY') {
         newBalance += (order.shares * order.limitPrice);
       } else {
@@ -433,7 +417,6 @@ const App: React.FC = () => {
           newPositions.push({ symbol: order.symbol, shares: order.shares, avgPrice: order.limitPrice });
         }
       }
-
       return {
         ...prev,
         balance: newBalance,
@@ -618,7 +601,6 @@ const App: React.FC = () => {
                   Trade Execution
                 </h3>
 
-                {/* DISTINCT ORDER TYPE SELECTOR */}
                 <div className="grid grid-cols-3 gap-2 mb-4 p-1.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 backdrop-blur-md">
                   {(['MARKET', 'LIMIT', 'STOP_LOSS'] as OrderType[]).map((type) => (
                     <button 
@@ -639,7 +621,6 @@ const App: React.FC = () => {
                   ))}
                 </div>
 
-                {/* SCHEDULING TOGGLE */}
                 <div className="space-y-3 mb-6">
                   <div className="flex items-center justify-between px-2 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -669,7 +650,6 @@ const App: React.FC = () => {
                   )}
                 </div>
 
-                {/* TRAILING TOGGLE & UNIT SELECTOR */}
                 {orderType === 'STOP_LOSS' && (
                   <div className="space-y-3 mb-6">
                     <div className="flex items-center justify-between px-2 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
@@ -710,15 +690,11 @@ const App: React.FC = () => {
                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block whitespace-nowrap">
                              {orderType === 'LIMIT' ? 'Limit Price' : 'Stop Price'}
                            </label>
-                           {isTrailing && (
-                             <span className="text-[8px] font-bold bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded uppercase tracking-tighter border border-amber-500/20">
-                               Trailing {trailingType === 'PERCENT' ? '%' : '$'}
-                             </span>
-                           )}
                         </div>
-                        {/* Live Input Preview Badge */}
-                        <div className="bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700 flex items-center gap-1.5">
-                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Target:</span>
+                        <div className="flex items-center gap-1.5 bg-slate-800/80 px-2 py-1 rounded border border-slate-700">
+                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
+                             {orderType === 'LIMIT' ? 'Entry' : 'Trigger'}:
+                           </span>
                            <span className="text-[10px] font-mono font-bold text-emerald-400">
                              {limitPrice ? (trailingType === 'PERCENT' && isTrailing ? `${limitPrice}%` : `$${parseFloat(limitPrice).toFixed(2)}`) : '--'}
                            </span>
