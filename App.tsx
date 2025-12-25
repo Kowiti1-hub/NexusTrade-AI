@@ -669,13 +669,27 @@ const App: React.FC = () => {
                   {orderType !== 'MARKET' && (
                     <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                       <div className="flex justify-between items-center mb-2">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
-                          {orderType === 'LIMIT' ? 'Limit Price' : (isTrailing ? (trailingType === 'FIXED' ? 'Trailing Amount' : 'Trailing Offset') : 'Stop Price')}
-                        </label>
+                        <div className="flex items-center gap-2">
+                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block whitespace-nowrap">
+                             {orderType === 'LIMIT' ? 'Limit Price' : 'Stop Price'}
+                           </label>
+                           {isTrailing && (
+                             <span className="text-[8px] font-bold bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded uppercase tracking-tighter border border-amber-500/20">
+                               Trailing {trailingType === 'PERCENT' ? '%' : '$'}
+                             </span>
+                           )}
+                        </div>
+                        {/* Live Input Preview Badge */}
+                        <div className="bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700 flex items-center gap-1.5">
+                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Target:</span>
+                           <span className="text-[10px] font-mono font-bold text-emerald-400">
+                             {limitPrice ? (trailingType === 'PERCENT' && isTrailing ? `${limitPrice}%` : `$${parseFloat(limitPrice).toFixed(2)}`) : '--'}
+                           </span>
+                        </div>
                       </div>
-                      <div className="relative">
+                      <div className="relative group/input">
                         {(!isTrailing || trailingType === 'FIXED') && (
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-emerald-400 transition-colors">$</span>
                         )}
                         <input 
                           type="number" 
@@ -685,19 +699,19 @@ const App: React.FC = () => {
                           className={`w-full bg-slate-800/80 border border-slate-700 rounded-2xl pr-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all placeholder:text-slate-700 ${(!isTrailing || trailingType === 'FIXED') ? 'pl-8' : 'pl-4'}`}
                         />
                         {isTrailing && trailingType === 'PERCENT' && (
-                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">%</span>
+                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-emerald-400 transition-colors">%</span>
                         )}
                       </div>
                       {isTrailing && (
                         <div className="mt-3 p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl">
                           <div className="flex justify-between items-center mb-1">
-                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Initial Activation</span>
+                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Initial Stop Price</span>
                             <span className="flex h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
                           </div>
                           <div className="flex items-baseline gap-2">
                              <span className="text-lg font-mono font-bold text-amber-400">${calculatePreviewStopPrice().toFixed(2)}</span>
                              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-tight">
-                               Dist: {trailingType === 'FIXED' ? `$${parseFloat(limitPrice) || 0}` : `${limitPrice || 0}%`}
+                               Dist: {trailingType === 'FIXED' ? `$${parseFloat(limitPrice) || 0}` : `${limitPrice || 0}%`} from market
                              </span>
                           </div>
                         </div>
