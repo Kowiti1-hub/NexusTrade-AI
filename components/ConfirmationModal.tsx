@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { OrderSide, OrderType } from '../types';
+import { OrderSide, OrderType, TrailingType } from '../types';
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -14,6 +14,7 @@ interface ConfirmationModalProps {
     orderType: OrderType;
     totalValue: number;
     isTrailing?: boolean;
+    trailingType?: TrailingType;
     trailingAmount?: number;
   } | null;
 }
@@ -69,7 +70,9 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
             {tradeInfo.isTrailing && (
                <div className="flex justify-between items-center border-t border-slate-700 pt-4">
                 <span className="text-slate-400 text-sm font-medium uppercase tracking-wider">Trailing Offset</span>
-                <span className="text-amber-400 font-mono text-lg">${tradeInfo.trailingAmount?.toFixed(2)}</span>
+                <span className="text-amber-400 font-mono text-lg">
+                  {tradeInfo.trailingType === 'PERCENT' ? `${tradeInfo.trailingAmount?.toFixed(2)}%` : `$${tradeInfo.trailingAmount?.toFixed(2)}`}
+                </span>
               </div>
             )}
 
@@ -104,7 +107,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
           </div>
           
           <p className="text-[10px] text-slate-500 mt-6 text-center italic leading-relaxed">
-            Please verify all details. {tradeInfo.isTrailing ? 'Your stop price will move automatically as the stock price reaches new highs.' : tradeInfo.orderType === 'MARKET' ? 'This trade will execute at the best available price.' : 'The order will wait until your target price is reached.'}
+            Please verify all details. {tradeInfo.isTrailing ? `Your stop price will track the market peak by ${tradeInfo.trailingAmount}${tradeInfo.trailingType === 'PERCENT' ? '%' : '$'} and trigger when that distance is breached.` : tradeInfo.orderType === 'MARKET' ? 'This trade will execute at the best available price.' : 'The order will wait until your target price is reached.'}
           </p>
         </div>
       </div>

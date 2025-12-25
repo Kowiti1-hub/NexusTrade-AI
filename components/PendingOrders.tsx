@@ -103,12 +103,12 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                     {order.side}
                   </span>
                   {order.isTrailing && (
-                    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      <span className="relative flex h-2 w-2">
+                    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]">
+                      <span className="relative flex h-1.5 w-1.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
                       </span>
-                      Trailing
+                      Trailing Stop
                     </span>
                   )}
                 </div>
@@ -126,12 +126,16 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Order Details</p>
-                    <p className="text-xs text-slate-300 font-medium">{order.type.replace('_', ' ')} • {order.shares} Shares</p>
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Details</p>
+                    <p className="text-xs text-slate-300 font-medium">
+                      {order.type.replace('_', ' ')} • {order.shares} Shares
+                    </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Status</p>
-                    <p className="text-xs text-amber-500 font-bold uppercase tracking-tighter italic">Tracking Market...</p>
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Execution</p>
+                    <p className={`text-xs font-bold uppercase tracking-tighter ${order.isTrailing ? 'text-amber-500' : 'text-emerald-500'}`}>
+                      {order.isTrailing ? 'Auto-Tracking' : 'Pending Price'}
+                    </p>
                   </div>
                 </div>
 
@@ -139,7 +143,7 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                   <div className="flex justify-between items-end">
                     <div>
                       <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">
-                        {order.isTrailing ? 'Live Stop Price' : 'Activation Price'}
+                        {order.isTrailing ? 'Dynamic Stop Price' : 'Trigger Price'}
                       </p>
                       <p className={`text-2xl font-mono font-bold ${order.isTrailing ? 'text-amber-400' : 'text-emerald-400'}`}>
                         ${order.limitPrice.toFixed(2)}
@@ -150,13 +154,18 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                       <div className="text-right">
                         <div className="space-y-2">
                           <div className="flex flex-col items-end">
-                            <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Trailing Offset</span>
-                            <span className="text-xs text-amber-500/80 font-mono font-bold">
-                              {order.trailingType === 'PERCENT' ? `-${order.trailingAmount?.toFixed(2)}%` : `-$${order.trailingAmount?.toFixed(2)}`}
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                                {order.trailingType}
+                              </span>
+                              <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Offset</span>
+                            </div>
+                            <span className="text-sm text-white font-mono font-bold">
+                              {order.trailingType === 'PERCENT' ? `${order.trailingAmount?.toFixed(2)}%` : `$${order.trailingAmount?.toFixed(2)}`}
                             </span>
                           </div>
                           <div className="flex flex-col items-end border-t border-slate-800 pt-1">
-                            <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Peak Price</span>
+                            <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Market Peak</span>
                             <span className="text-xs text-slate-300 font-mono font-bold">${order.highestPriceObserved?.toFixed(2)}</span>
                           </div>
                         </div>
@@ -167,7 +176,7 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
 
                 <div className="flex justify-between items-center text-[9px] font-mono text-slate-600">
                   <span>ID: {order.orderId.substring(0, 8)}...</span>
-                  <span>{new Date(order.timestamp).toLocaleTimeString()}</span>
+                  <span>{new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
               </div>
             </div>

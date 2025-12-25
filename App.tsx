@@ -244,6 +244,15 @@ const App: React.FC = () => {
     fetchStockData(selectedStock);
   }, [selectedSymbol, fetchStockData]);
 
+  const calculatePreviewStopPrice = () => {
+    const val = parseFloat(limitPrice);
+    if (isNaN(val) || val <= 0) return selectedStock.price;
+    if (trailingType === 'PERCENT') {
+      return selectedStock.price * (1 - val / 100);
+    }
+    return selectedStock.price - val;
+  };
+
   const handleTrade = (side: OrderSide) => {
     const shares = parseFloat(tradeAmount);
     const amountVal = parseFloat(limitPrice);
@@ -253,11 +262,7 @@ const App: React.FC = () => {
     if (orderType !== 'MARKET' && (isNaN(price) || price <= 0)) return;
 
     if (orderType === 'STOP_LOSS' && isTrailing) {
-      if (trailingType === 'PERCENT') {
-        price = selectedStock.price * (1 - amountVal / 100);
-      } else {
-        price = selectedStock.price - amountVal;
-      }
+      price = calculatePreviewStopPrice();
     }
 
     if (orderType === 'STOP_LOSS' && side === 'BUY') {
@@ -665,25 +670,37 @@ const App: React.FC = () => {
                     <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                       <div className="flex justify-between items-center mb-2">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
-                          {orderType === 'LIMIT' ? 'Limit Price' : (isTrailing ? (trailingType === 'FIXED' ? 'Trailing Amount ($)' : 'Trailing Offset (%)') : 'Stop Price')}
+                          {orderType === 'LIMIT' ? 'Limit Price' : (isTrailing ? (trailingType === 'FIXED' ? 'Trailing Amount' : 'Trailing Offset') : 'Stop Price')}
                         </label>
                       </div>
                       <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">
-                          {trailingType === 'PERCENT' && isTrailing ? '%' : '$'}
-                        </span>
+                        {(!isTrailing || trailingType === 'FIXED') && (
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
+                        )}
                         <input 
                           type="number" 
                           value={limitPrice}
                           onChange={(e) => setLimitPrice(e.target.value)}
                           placeholder={isTrailing ? (trailingType === 'PERCENT' ? "5.00" : "10.00") : selectedStock.price.toFixed(2)}
-                          className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl pl-8 pr-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all placeholder:text-slate-700"
+                          className={`w-full bg-slate-800/80 border border-slate-700 rounded-2xl pr-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all placeholder:text-slate-700 ${(!isTrailing || trailingType === 'FIXED') ? 'pl-8' : 'pl-4'}`}
                         />
+                        {isTrailing && trailingType === 'PERCENT' && (
+                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">%</span>
+                        )}
                       </div>
                       {isTrailing && (
-                        <p className="text-[9px] text-slate-500 mt-2 italic">
-                          Stop price will track {limitPrice || '0'}{trailingType === 'PERCENT' ? '%' : '$'} below current peak.
-                        </p>
+                        <div className="mt-3 p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Initial Activation</span>
+                            <span className="flex h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                             <span className="text-lg font-mono font-bold text-amber-400">${calculatePreviewStopPrice().toFixed(2)}</span>
+                             <span className="text-[9px] text-slate-500 font-bold uppercase tracking-tight">
+                               Dist: {trailingType === 'FIXED' ? `$${parseFloat(limitPrice) || 0}` : `${limitPrice || 0}%`}
+                             </span>
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}
