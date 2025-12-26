@@ -91,6 +91,13 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
               </div>
             )}
 
+            {tradeInfo.orderType === 'MARKET' && (
+              <div className="flex justify-between items-center border-t border-slate-700 pt-4">
+                <span className="text-slate-400 text-sm font-medium uppercase tracking-wider">Market Price</span>
+                <span className="text-emerald-400 font-mono text-lg font-bold">${tradeInfo.price.toFixed(2)}</span>
+              </div>
+            )}
+
             <div className="flex justify-between items-center border-t border-slate-700 pt-4">
               <span className="text-slate-400 text-sm font-medium uppercase tracking-wider">
                 {tradeInfo.orderType === 'MARKET' ? 'Estimated Price' : (tradeInfo.isTrailing ? 'Initial Stop' : 'Target Price')}

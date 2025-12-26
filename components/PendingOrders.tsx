@@ -7,32 +7,37 @@ interface PendingOrdersProps {
   onCancel: (id: string) => void;
 }
 
-const getOrderIcon = (type: OrderType, isTrailing?: boolean) => {
+const getOrderIcon = (type: OrderType, isTrailing?: boolean, size: 'sm' | 'md' = 'md') => {
+  const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
+  
   if (isTrailing) {
     return (
-      <svg className="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-      </svg>
+      <div className="relative flex items-center justify-center">
+        <div className={`absolute inset-0 bg-amber-400/20 rounded-full animate-ping ${size === 'sm' ? 'scale-110' : 'scale-150'}`}></div>
+        <svg className={`${iconSize} text-amber-400 relative z-10`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+        </svg>
+      </div>
     );
   }
 
   switch (type) {
     case 'MARKET':
       return (
-        <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className={`${iconSize} text-blue-400`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       );
     case 'LIMIT':
       return (
-        <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className={`${iconSize} text-emerald-400`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <circle cx="12" cy="12" r="3" strokeWidth={2.5} />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v3m0 14v3m10-10h-3M5 12H2" />
         </svg>
       );
     case 'STOP_LOSS':
       return (
-        <svg className="w-3.5 h-3.5 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className={`${iconSize} text-rose-400`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
       );
@@ -113,8 +118,13 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                   <button
                     key={type}
                     onClick={() => setFilterType(type)}
-                    className={`text-[9px] py-1 font-bold rounded ${filterType === type ? 'bg-slate-700 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
+                    className={`flex items-center justify-center gap-1.5 text-[9px] py-1 font-bold rounded transition-colors ${filterType === type ? 'bg-slate-700 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
                   >
+                    {type !== 'ALL' && (
+                      <span className="opacity-80 scale-90">
+                        {getOrderIcon(type, false, 'sm')}
+                      </span>
+                    )}
                     {type === 'STOP_LOSS' ? 'STOP' : type}
                   </button>
                 ))}
@@ -159,27 +169,41 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Details</p>
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-2">Order Details</p>
                     <div className="flex items-center gap-2">
-                      <div className="p-1 bg-slate-800 rounded">
+                      <div className={`p-1.5 rounded-lg flex items-center justify-center ${
+                        order.isTrailing ? 'bg-amber-500/10' : 
+                        order.type === 'MARKET' ? 'bg-blue-500/10' :
+                        order.type === 'LIMIT' ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+                      }`}>
                         {getOrderIcon(order.type, order.isTrailing)}
                       </div>
-                      <p className="text-xs text-slate-300 font-medium">
-                        {order.isTrailing ? 'Trailing Stop' : order.type.replace('_', ' ')} • {order.shares} Shares
-                      </p>
+                      <div className="flex flex-col">
+                        <p className="text-xs text-slate-200 font-bold uppercase tracking-tight">
+                          {order.isTrailing ? 'Trailing Stop' : order.type.replace('_', ' ')}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-mono font-medium">
+                          {order.shares.toLocaleString()} Shares
+                        </p>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Status</p>
-                    <p className={`text-xs font-bold uppercase tracking-tighter ${order.scheduledTime && order.scheduledTime > Date.now() ? 'text-amber-500' : 'text-emerald-500'}`}>
-                      {order.scheduledTime && order.scheduledTime > Date.now() ? 'Waiting for Time' : 'Price Monitoring'}
-                    </p>
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-2">Execution Status</p>
+                    <div className="flex flex-col items-end">
+                      <p className={`text-xs font-bold uppercase tracking-tighter ${order.scheduledTime && order.scheduledTime > Date.now() ? 'text-amber-500' : 'text-emerald-500'}`}>
+                        {order.scheduledTime && order.scheduledTime > Date.now() ? 'Awaiting Schedule' : 'Live Tracking'}
+                      </p>
+                      <p className="text-[10px] text-slate-600 font-medium">
+                        {order.scheduledTime && order.scheduledTime > Date.now() ? 'Market Entry Pending' : 'Monitoring Price'}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
                 {order.scheduledTime && order.scheduledTime > Date.now() && (
                    <div className="bg-amber-500/5 rounded-xl p-3 border border-amber-500/10 mb-2">
-                     <p className="text-[8px] text-amber-500 uppercase font-bold tracking-widest mb-1">Triggering at</p>
+                     <p className="text-[8px] text-amber-500 uppercase font-bold tracking-widest mb-1">Scheduled For</p>
                      <p className="text-xs font-mono text-slate-200">
                         {new Date(order.scheduledTime).toLocaleString()}
                      </p>
@@ -190,7 +214,7 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">
-                        {order.isTrailing ? 'Dynamic Stop Price' : 'Trigger Price'}
+                        {order.isTrailing ? 'Current Stop Level' : 'Activation Price'}
                       </p>
                       <p className={`text-2xl font-mono font-bold ${order.isTrailing ? 'text-amber-400' : 'text-emerald-400'}`}>
                         ${order.limitPrice.toFixed(2)}
@@ -201,12 +225,12 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                       <div className="flex flex-col gap-3 min-w-[120px]">
                         <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
                           <div className="flex justify-between items-center gap-4 mb-2">
-                             <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Peak Observed</span>
+                             <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Market Peak</span>
                              <span className="text-[10px] text-white font-mono font-bold">${order.highestPriceObserved?.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between items-center gap-4">
                              <div className="flex items-center gap-1">
-                               <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Offset</span>
+                               <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Distance</span>
                                <span className={`text-[7px] font-black px-1 py-0.5 rounded leading-none ${order.trailingType === 'PERCENT' ? 'bg-amber-500/20 text-amber-500' : 'bg-slate-700 text-slate-400'}`}>
                                  {order.trailingType}
                                </span>
@@ -222,8 +246,8 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                 </div>
 
                 <div className="flex justify-between items-center text-[9px] font-mono text-slate-600">
-                  <span>ID: {order.orderId.substring(0, 8)}...</span>
-                  <span>Created: {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>REF: {order.orderId.substring(0, 8).toUpperCase()}</span>
+                  <span>Entry: {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
               </div>
             </div>
@@ -233,7 +257,7 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
             <svg className="w-8 h-8 mx-auto mb-3 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p className="italic text-xs">No matching orders found.</p>
+            <p className="italic text-xs">No active orders match your criteria.</p>
           </div>
         )}
       </div>
