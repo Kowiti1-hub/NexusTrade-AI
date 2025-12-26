@@ -7,6 +7,40 @@ interface PendingOrdersProps {
   onCancel: (id: string) => void;
 }
 
+const getOrderIcon = (type: OrderType, isTrailing?: boolean) => {
+  if (isTrailing) {
+    return (
+      <svg className="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+      </svg>
+    );
+  }
+
+  switch (type) {
+    case 'MARKET':
+      return (
+        <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      );
+    case 'LIMIT':
+      return (
+        <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <circle cx="12" cy="12" r="3" strokeWidth={2.5} />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v3m0 14v3m10-10h-3M5 12H2" />
+        </svg>
+      );
+    case 'STOP_LOSS':
+      return (
+        <svg className="w-3.5 h-3.5 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+};
+
 const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
   const [searchSymbol, setSearchSymbol] = useState('');
   const [filterSide, setFilterSide] = useState<'ALL' | OrderSide>('ALL');
@@ -110,15 +144,6 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                        Scheduled
                     </span>
                   )}
-                  {order.isTrailing && (
-                    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
-                      </span>
-                      Trailing Stop
-                    </span>
-                  )}
                 </div>
                 <button 
                   onClick={() => onCancel(order.orderId)}
@@ -135,9 +160,14 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Details</p>
-                    <p className="text-xs text-slate-300 font-medium">
-                      {order.type.replace('_', ' ')} • {order.shares} Shares
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 bg-slate-800 rounded">
+                        {getOrderIcon(order.type, order.isTrailing)}
+                      </div>
+                      <p className="text-xs text-slate-300 font-medium">
+                        {order.isTrailing ? 'Trailing Stop' : order.type.replace('_', ' ')} • {order.shares} Shares
+                      </p>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Status</p>

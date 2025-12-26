@@ -769,28 +769,28 @@ const App: React.FC = () => {
                     <button 
                       onClick={() => handleTrade('BUY')}
                       disabled={orderType === 'STOP_LOSS'}
-                      className={`font-bold py-5 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 ${
+                      className={`group font-bold py-5 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 border-2 ${
                         orderType === 'STOP_LOSS' 
-                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700 opacity-50' 
-                          : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/10'
+                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed border-slate-700 opacity-50' 
+                          : 'bg-emerald-500/10 border-emerald-500/50 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 shadow-emerald-500/5'
                       }`}
                     >
-                      <span className="text-[10px] uppercase tracking-widest opacity-70">Long</span>
-                      <span className="text-base">
-                        {isScheduled ? 'Scheduled Buy' : (orderType === 'LIMIT' ? 'Limit Buy' : 'Instant Buy')}
+                      <span className="text-[10px] uppercase tracking-widest opacity-70 group-hover:opacity-100 transition-opacity">Long Position</span>
+                      <span className="text-base font-bold">
+                        {isScheduled ? 'Schedule Buy' : (orderType === 'LIMIT' ? 'Limit Buy' : 'Market Buy')}
                       </span>
                     </button>
                     <button 
                       onClick={() => handleTrade('SELL')}
-                      className={`font-bold py-5 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 ${
+                      className={`group font-bold py-5 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 border-2 ${
                         orderType === 'STOP_LOSS'
-                          ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/10'
-                          : 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/10'
+                          ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/10 border-amber-500/30'
+                          : 'bg-rose-500/10 border-rose-500/50 hover:bg-rose-500 text-rose-400 hover:text-white shadow-rose-500/5'
                       }`}
                     >
-                      <span className="text-[10px] uppercase tracking-widest opacity-70">Short</span>
-                      <span className="text-base">
-                        {isScheduled ? 'Scheduled Sell' : (orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? (isTrailing ? 'Trailing Stop' : 'Stop Loss') : 'Instant Sell')}
+                      <span className="text-[10px] uppercase tracking-widest opacity-70 group-hover:opacity-100 transition-opacity">Short Position</span>
+                      <span className="text-base font-bold">
+                        {isScheduled ? 'Schedule Sell' : (orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? (isTrailing ? 'Trailing Stop' : 'Stop Loss') : 'Market Sell')}
                       </span>
                     </button>
                   </div>
