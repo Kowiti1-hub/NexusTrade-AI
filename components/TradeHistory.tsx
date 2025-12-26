@@ -60,9 +60,6 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
               const stock = stocks.find(s => s.symbol === order.symbol);
               const currentPrice = stock?.price || order.price;
               
-              // For BUY, P&L is (Current - Entry)
-              // For SELL, we show "Timing Gain" (Entry - Current) 
-              // which represents the profit preserved by selling vs holding
               const pnl = order.side === 'BUY' 
                 ? (currentPrice - order.price) * order.shares
                 : (order.price - currentPrice) * order.shares;
