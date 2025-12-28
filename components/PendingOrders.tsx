@@ -7,67 +7,14 @@ interface PendingOrdersProps {
   onCancel: (id: string) => void;
 }
 
-const getOrderIcon = (type: OrderType, isTrailing?: boolean, size: 'sm' | 'md' | 'lg' = 'md') => {
-  const iconSize = size === 'sm' ? 'w-3 h-3' : size === 'lg' ? 'w-5 h-5' : 'w-4 h-4';
-  
-  if (isTrailing) {
-    return (
-      <div className="relative flex items-center justify-center">
-        <div className={`absolute inset-0 bg-amber-400/20 rounded-full animate-ping ${size === 'sm' ? 'scale-110' : 'scale-150'}`}></div>
-        <svg className={`${iconSize} text-amber-400 relative z-10`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-        </svg>
-      </div>
-    );
-  }
-
+const getOrderIcon = (type: OrderType, isTrailing?: boolean) => {
+  if (isTrailing) return <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]"></div>;
   switch (type) {
-    case 'MARKET':
-      return (
-        <svg className={`${iconSize} text-blue-400`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      );
-    case 'LIMIT':
-      return (
-        <svg className={`${iconSize} text-emerald-400`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      );
-    case 'STOP_LOSS':
-      return (
-        <svg className={`${iconSize} text-rose-400`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-        </svg>
-      );
-    default:
-      return null;
+    case 'MARKET': return <div className="w-2 h-2 rounded-full bg-sky-400"></div>;
+    case 'LIMIT': return <div className="w-2 h-2 rounded-full bg-emerald-400"></div>;
+    case 'STOP_LOSS': return <div className="w-2 h-2 rounded-full bg-rose-400"></div>;
+    default: return null;
   }
-};
-
-const OrderStatusIndicator: React.FC<{ order: PendingOrder }> = ({ order }) => {
-  const isScheduledFuture = order.scheduledTime && order.scheduledTime > Date.now();
-  
-  if (isScheduledFuture) {
-    return (
-      <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        Scheduled
-      </span>
-    );
-  }
-
-  return (
-    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-      <span className="relative flex h-2 w-2">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-      </span>
-      Live
-    </span>
-  );
 };
 
 const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
@@ -75,6 +22,27 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
   const [filterSide, setFilterSide] = useState<'ALL' | OrderSide>('ALL');
   const [filterType, setFilterType] = useState<'ALL' | OrderType>('ALL');
   const [showFilters, setShowFilters] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchSymbol) count++;
+    if (filterSide !== 'ALL') count++;
+    if (filterType !== 'ALL') count++;
+    return count;
+  }, [searchSymbol, filterSide, filterType]);
+
+  const resetFilters = () => {
+    setSearchSymbol('');
+    setFilterSide('ALL');
+    setFilterType('ALL');
+  };
 
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
@@ -90,215 +58,169 @@ const PendingOrders: React.FC<PendingOrdersProps> = ({ orders, onCancel }) => {
   return (
     <section className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden mt-6">
       <div className="px-6 py-4 border-b border-slate-800 bg-slate-800/20 flex justify-between items-center">
-        <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
-          <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          Active Orders
-        </h3>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setShowFilters(!showFilters)}
-            className={`p-1.5 rounded-lg transition-colors ${showFilters ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+        <div className="flex items-center gap-4">
+          <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
+            <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-          </button>
-          <span className="text-[10px] font-mono text-slate-500">{filteredOrders.length} / {orders.length}</span>
+            Active Execution Queue
+          </h3>
+          <span className="text-[9px] font-mono font-bold text-slate-500 uppercase px-2 py-0.5 bg-slate-800 rounded border border-slate-700">
+            {filteredOrders.length} Orders Active
+          </span>
         </div>
+        
+        <button 
+          onClick={() => setShowFilters(!showFilters)}
+          className={`p-1.5 rounded-lg transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-tight relative ${showFilters ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800 border border-transparent'}`}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          Filters
+          {activeFilterCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 absolute -top-0.5 -right-0.5"></span>}
+        </button>
       </div>
 
       {showFilters && (
-        <div className="p-4 bg-slate-800/20 border-b border-slate-800 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="relative">
-            <input 
-              type="text"
-              placeholder="Search symbol..."
-              value={searchSymbol}
-              onChange={(e) => setSearchSymbol(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-3 pr-4 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
-            />
+        <div className="p-4 bg-slate-950/40 border-b border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div>
+             <label className="text-[8px] font-black text-slate-600 uppercase tracking-widest block mb-1">Asset Search</label>
+             <input 
+               type="text"
+               placeholder="Enter Symbol..."
+               value={searchSymbol}
+               onChange={(e) => setSearchSymbol(e.target.value)}
+               className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-[11px] font-mono text-white focus:outline-none focus:border-emerald-500/50"
+             />
           </div>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Side</p>
-              <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-700">
-                {(['ALL', 'BUY', 'SELL'] as const).map(side => (
-                  <button
-                    key={side}
-                    onClick={() => setFilterSide(side)}
-                    className={`text-[9px] py-1 font-bold rounded ${filterSide === side ? 'bg-slate-700 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    {side}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex-1">
-              <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Type</p>
-              <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-700">
-                {(['ALL', 'LIMIT', 'STOP_LOSS'] as const).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => setFilterType(type)}
-                    className={`flex items-center justify-center gap-1.5 text-[9px] py-1 font-bold rounded transition-colors ${filterType === type ? 'bg-slate-700 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    {type !== 'ALL' && (
-                      <span className="opacity-80 scale-90">
-                        {getOrderIcon(type, false, 'sm')}
-                      </span>
-                    )}
-                    {type === 'STOP_LOSS' ? 'STOP' : type}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div>
+             <label className="text-[8px] font-black text-slate-600 uppercase tracking-widest block mb-1">Action</label>
+             <div className="flex gap-1">
+               {(['ALL', 'BUY', 'SELL'] as const).map(s => (
+                 <button 
+                   key={s}
+                   onClick={() => setFilterSide(s)}
+                   className={`flex-1 py-1.5 text-[9px] font-black rounded border transition-all ${filterSide === s ? 'bg-slate-700 text-white border-slate-600' : 'text-slate-500 border-transparent hover:bg-slate-800'}`}
+                 >
+                   {s}
+                 </button>
+               ))}
+             </div>
+          </div>
+          <div>
+             <label className="text-[8px] font-black text-slate-600 uppercase tracking-widest block mb-1">Execution Type</label>
+             <div className="flex gap-1 overflow-x-auto">
+               {(['ALL', 'MARKET', 'LIMIT', 'STOP_LOSS'] as const).map(t => (
+                 <button 
+                   key={t}
+                   onClick={() => setFilterType(t)}
+                   className={`flex-1 min-w-max px-2 py-1.5 text-[9px] font-black rounded border transition-all ${filterType === t ? 'bg-slate-700 text-white border-slate-600' : 'text-slate-500 border-transparent hover:bg-slate-800'}`}
+                 >
+                   {t.replace('_', ' ')}
+                 </button>
+               ))}
+             </div>
           </div>
         </div>
       )}
 
-      <div className="divide-y divide-slate-800 max-h-[480px] overflow-y-auto">
-        {filteredOrders.length > 0 ? (
-          filteredOrders.map((order) => (
-            <div key={order.orderId} className="p-5 hover:bg-slate-800/30 transition-colors group">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className={`p-1.5 rounded-lg flex items-center justify-center ${
-                    order.isTrailing ? 'bg-amber-500/10' : 
-                    order.type === 'MARKET' ? 'bg-blue-500/10' :
-                    order.type === 'LIMIT' ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-slate-800/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800/50">
+              <th className="px-6 py-4">Symbol</th>
+              <th className="px-6 py-4">Order ID</th>
+              <th className="px-6 py-4">Action</th>
+              <th className="px-6 py-4">Type</th>
+              <th className="px-6 py-4">Shares</th>
+              <th className="px-6 py-4 text-right">Target / Trailing Price</th>
+              <th className="px-6 py-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/30">
+            {filteredOrders.map((order) => (
+              <tr key={order.orderId} className="hover:bg-slate-800/20 transition-all duration-200 group">
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    {getOrderIcon(order.type, order.isTrailing)}
+                    <span className="text-sm font-mono font-black text-white">{order.symbol}</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <div className="flex items-center gap-1.5 bg-slate-950/40 px-2 py-1 rounded-lg border border-slate-800/50">
+                        <span className="font-mono text-[10px] font-bold text-slate-500">
+                          {order.orderId.substring(0, 8).toUpperCase()}
+                        </span>
+                      </div>
+                      {copiedId === order.orderId && (
+                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-emerald-500 text-slate-950 text-[9px] font-black py-0.5 px-2 rounded shadow-lg animate-bounce z-10 whitespace-nowrap">
+                          COPIED
+                        </div>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => handleCopyId(order.orderId)}
+                      className="p-1 text-slate-600 hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all"
+                      title="Copy Full ID"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
+                    order.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
                   }`}>
-                    {getOrderIcon(order.type, order.isTrailing, 'md')}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-mono font-bold text-white text-sm tracking-tight leading-none mb-1">{order.symbol}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest uppercase ${
-                        order.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}>
-                        {order.side}
+                    {order.side}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                    {order.isTrailing ? 'TRAILING STOP' : order.type.replace('_', ' ')}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-xs font-mono font-medium text-slate-300">{order.shares.toLocaleString()}</span>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  {order.isTrailing ? (
+                    <div className="flex flex-col items-end">
+                      <span className="text-sm font-mono font-bold text-amber-400">${order.limitPrice.toFixed(2)}</span>
+                      <span className="text-[9px] text-slate-500 uppercase font-black tracking-tighter">
+                        Peak: ${order.highestPriceObserved?.toFixed(2)}
                       </span>
-                      <OrderStatusIndicator order={order} />
                     </div>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => onCancel(order.orderId)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-xl hover:bg-rose-500/10 text-rose-400 transition-all border border-transparent hover:border-rose-500/20"
-                  title="Cancel Order"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-800/20 p-3 rounded-xl border border-slate-700/30">
-                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1.5">Quantity</p>
-                    <p className="text-sm text-slate-200 font-mono font-bold">
-                      {order.shares.toLocaleString()} Shares
-                    </p>
-                    <p className="text-[8px] text-slate-500 font-medium uppercase tracking-tighter">
-                      {order.isTrailing ? 'Trailing Stop' : order.type.replace('_', ' ')}
-                    </p>
-                  </div>
-                  <div className="bg-slate-800/20 p-3 rounded-xl border border-slate-700/30 text-right">
-                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1.5">Current Value</p>
-                    <p className="text-sm text-slate-200 font-mono font-bold">
-                      ${(order.shares * order.limitPrice).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-[8px] text-slate-500 font-medium uppercase tracking-tighter">Estimated</p>
-                  </div>
-                </div>
-
-                {order.scheduledTime && order.scheduledTime > Date.now() && (
-                   <div className="bg-amber-500/5 rounded-xl p-3 border border-amber-500/10 mb-2">
-                     <div className="flex items-center justify-between">
-                       <p className="text-[8px] text-amber-500 uppercase font-bold tracking-widest">Execution window</p>
-                       <svg className="w-3 h-3 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                       </svg>
-                     </div>
-                     <p className="text-xs font-mono text-slate-200">
-                        {new Date(order.scheduledTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                     </p>
-                   </div>
-                )}
-
-                <div className="bg-slate-950/50 rounded-2xl p-4 border border-slate-800/50 space-y-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">
-                        {order.isTrailing ? 'Current Stop Level' : 'Activation Price'}
-                      </p>
-                      <p className={`text-2xl font-mono font-bold ${order.isTrailing ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        ${order.limitPrice.toFixed(2)}
-                      </p>
-                    </div>
-                    {order.isTrailing && (
-                      <div className="p-2 bg-amber-500/10 rounded-full">
-                         {getOrderIcon(order.type, true, 'lg')}
-                      </div>
-                    )}
-                  </div>
-                  
-                  {order.isTrailing && (
-                    <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-800/50">
-                      {/* MARKET PEAK BOX */}
-                      <div className="bg-emerald-500/5 border-l-4 border-emerald-500/40 p-3 rounded-r-xl transition-all hover:bg-emerald-500/10">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <svg className="w-3 h-3 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                          </svg>
-                          <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Market Peak</p>
-                        </div>
-                        <p className="text-xl font-mono font-bold text-white tracking-tighter">
-                          ${order.highestPriceObserved?.toFixed(2)}
-                        </p>
-                        <p className="text-[8px] text-slate-500 font-bold uppercase mt-1">High-Water Mark</p>
-                      </div>
-                      
-                      {/* TRAILING OFFSET BOX */}
-                      <div className="bg-amber-500/5 border-l-4 border-amber-500/40 p-3 rounded-r-xl transition-all hover:bg-amber-500/10">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <svg className="w-3 h-3 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                            </svg>
-                            <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Offset</p>
-                          </div>
-                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none ${order.trailingType === 'PERCENT' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}`}>
-                             {order.trailingType === 'PERCENT' ? '%' : '$'}
-                          </span>
-                        </div>
-                        <p className="text-xl font-mono font-bold text-amber-400 tracking-tighter">
-                          {order.trailingType === 'PERCENT' ? `${order.trailingAmount?.toFixed(2)}%` : `$${order.trailingAmount?.toFixed(2)}`}
-                        </p>
-                        <p className="text-[8px] text-slate-500 font-bold uppercase mt-1">Dynamic Gap</p>
-                      </div>
-                    </div>
+                  ) : (
+                    <span className="text-sm font-mono font-bold text-slate-200">
+                      {order.type === 'MARKET' ? 'Market' : `$${order.limitPrice.toFixed(2)}`}
+                    </span>
                   )}
-                </div>
-
-                <div className="flex justify-between items-center text-[9px] font-mono text-slate-600">
-                  <div className="flex items-center gap-1">
-                    <span className="w-1 h-1 rounded-full bg-slate-700"></span>
-                    <span>ID: {order.orderId.substring(0, 8).toUpperCase()}</span>
-                  </div>
-                  <span>Log: {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="p-12 text-center text-slate-600">
-            <svg className="w-8 h-8 mx-auto mb-3 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="italic text-xs">No active orders found.</p>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <button 
+                    onClick={() => onCancel(order.orderId)}
+                    className="p-1.5 text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                    title="Terminate Order"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        
+        {filteredOrders.length === 0 && (
+          <div className="py-20 text-center">
+            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">No matching pending orders in queue</p>
+            <button onClick={resetFilters} className="mt-2 text-[9px] text-emerald-500 font-black uppercase hover:underline">Reset Active Filters</button>
           </div>
         )}
       </div>

@@ -432,6 +432,10 @@ const App: React.FC = () => {
     setTradeAmount((maxShares * percent).toString());
   };
 
+  // 24h Stats Calculation
+  const get24hHigh = () => Math.max(...selectedStock.history.map(p => p.price));
+  const get24hLow = () => Math.min(...selectedStock.history.map(p => p.price));
+
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-200">
       <Sidebar 
@@ -488,7 +492,7 @@ const App: React.FC = () => {
           </section>
         </div>
 
-        <header className="flex justify-between items-start mb-8">
+        <header className="flex justify-between items-start mb-4">
           <div>
             <h1 className="text-4xl font-bold text-white mb-2">{selectedStock.name}</h1>
             <div className="flex items-center gap-4">
@@ -504,15 +508,11 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-xl flex gap-8">
-            <div className="flex flex-col">
-              <span className="text-xs text-slate-500 uppercase font-bold tracking-tighter mb-1">Market Cap</span>
-              <span className="text-lg font-mono text-slate-200">{selectedStock.marketCap}</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xs text-slate-500 uppercase font-bold tracking-tighter mb-1">Volume</span>
-              <span className="text-lg font-mono text-slate-200">{selectedStock.volume}</span>
-            </div>
+          <div className="flex items-center gap-3">
+             <div className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg flex items-center gap-2 shadow-sm">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status:</span>
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-400/10 px-1.5 py-0.5 rounded">Market Open</span>
+             </div>
           </div>
         </header>
 
@@ -520,6 +520,62 @@ const App: React.FC = () => {
           <div className="col-span-2 space-y-8">
             <section className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 shadow-lg">
               <StockChart stock={selectedStock} />
+            </section>
+
+            <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-top-4 duration-500 backdrop-blur-md">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-emerald-500/10 rounded-lg">
+                    <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h1.5a2.5 2.5 0 012.5 2.5v.665M19 15.574V14a2 2 0 00-2-2H15M13 18v3" />
+                    </svg>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-200 uppercase tracking-widest">Market Fundamental Data</h3>
+                </div>
+                <span className="text-[10px] font-black text-slate-500 bg-slate-800 px-2 py-0.5 rounded uppercase tracking-tighter">Real-time Metrics</span>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Market Capitalization</label>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-3xl font-mono font-bold text-white tracking-tighter">
+                      ${selectedStock.marketCap}
+                    </p>
+                    <span className="text-[10px] font-bold text-slate-500">USD</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                     <p className="text-[9px] text-emerald-400 font-bold uppercase tracking-widest">Tier 1 Asset</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 border-l border-slate-800/50 pl-8">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Trading Volume</label>
+                  <p className="text-3xl font-mono font-bold text-slate-300 tracking-tighter">
+                    {selectedStock.volume}
+                  </p>
+                  <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">24h Cumulative</p>
+                </div>
+
+                <div className="space-y-1.5 border-l border-slate-800/50 pl-8">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Daily High</label>
+                  <p className="text-3xl font-mono font-bold text-emerald-500 tracking-tighter">
+                    ${get24hHigh().toFixed(2)}
+                  </p>
+                  <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Max Session Price</p>
+                </div>
+
+                <div className="space-y-1.5 border-l border-slate-800/50 pl-8">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Daily Low</label>
+                  <p className="text-3xl font-mono font-bold text-rose-500 tracking-tighter">
+                    ${get24hLow().toFixed(2)}
+                  </p>
+                  <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Min Session Price</p>
+                </div>
+              </div>
             </section>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -651,9 +707,12 @@ const App: React.FC = () => {
                 </div>
 
                 {orderType === 'STOP_LOSS' && (
-                  <div className="space-y-3 mb-6">
+                  <div className="space-y-3 mb-6 animate-in slide-in-from-top-4 duration-300">
                     <div className="flex items-center justify-between px-2 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Trailing Stop</span>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trailing Activation</span>
+                        <span className="text-[8px] text-slate-600 font-bold uppercase">Tracks Market Peak</span>
+                      </div>
                       <button 
                         onClick={() => setIsTrailing(!isTrailing)}
                         className={`w-10 h-5 rounded-full relative transition-colors ${isTrailing ? 'bg-emerald-500' : 'bg-slate-700'}`}
@@ -663,20 +722,36 @@ const App: React.FC = () => {
                     </div>
 
                     {isTrailing && (
-                      <div className="grid grid-cols-2 gap-2 p-1 bg-slate-800/60 rounded-xl border border-slate-700/30 animate-in fade-in slide-in-from-top-1 duration-200">
-                        {(['FIXED', 'PERCENT'] as TrailingType[]).map((type) => (
-                          <button
-                            key={type}
-                            onClick={() => setTrailingType(type)}
-                            className={`py-1.5 text-[9px] font-bold uppercase rounded-lg transition-all ${
-                              trailingType === type 
-                                ? 'bg-slate-700 text-amber-400 border border-amber-500/20' 
-                                : 'text-slate-500 hover:text-slate-300'
-                            }`}
-                          >
-                            {type === 'FIXED' ? 'Fixed ($)' : 'Percent (%)'}
-                          </button>
-                        ))}
+                      <div className="space-y-3 animate-in fade-in duration-300">
+                        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-800/60 rounded-xl border border-slate-700/30">
+                          {(['FIXED', 'PERCENT'] as TrailingType[]).map((type) => (
+                            <button
+                              key={type}
+                              onClick={() => setTrailingType(type)}
+                              className={`py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                                trailingType === type 
+                                  ? 'bg-slate-700 text-amber-400 border border-amber-500/20 shadow-inner' 
+                                  : 'text-slate-500 hover:text-slate-300'
+                              }`}
+                            >
+                              {type === 'FIXED' ? 'Amount ($)' : 'Distance (%)'}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl flex items-center justify-between">
+                           <div>
+                              <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Live Stop Preview</p>
+                              <p className="text-lg font-mono font-bold text-emerald-400 leading-none">
+                                ${calculatePreviewStopPrice().toFixed(2)}
+                              </p>
+                           </div>
+                           <div className="text-right">
+                              <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest leading-none mb-1">Offset</p>
+                              <p className="text-xs font-mono font-bold text-white">
+                                {limitPrice || '0'}{trailingType === 'PERCENT' ? '%' : '$'}
+                              </p>
+                           </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -686,19 +761,9 @@ const App: React.FC = () => {
                   {orderType !== 'MARKET' && (
                     <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                       <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-2">
-                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block whitespace-nowrap">
-                             {orderType === 'LIMIT' ? 'Limit Price' : 'Stop Price'}
-                           </label>
-                        </div>
-                        <div className="flex items-center gap-1.5 bg-slate-800/80 px-2 py-1 rounded border border-slate-700">
-                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
-                             {orderType === 'LIMIT' ? 'Entry' : 'Trigger'}:
-                           </span>
-                           <span className="text-[10px] font-mono font-bold text-emerald-400">
-                             {limitPrice ? (trailingType === 'PERCENT' && isTrailing ? `${limitPrice}%` : `$${parseFloat(limitPrice).toFixed(2)}`) : '--'}
-                           </span>
-                        </div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
+                          {isTrailing ? `Trailing Offset (${trailingType === 'PERCENT' ? '%' : '$'})` : (orderType === 'LIMIT' ? 'Target Limit Price' : 'Activation Stop Price')}
+                        </label>
                       </div>
                       <div className="relative group/input">
                         {(!isTrailing || trailingType === 'FIXED') && (
@@ -715,26 +780,12 @@ const App: React.FC = () => {
                           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-emerald-400 transition-colors">%</span>
                         )}
                       </div>
-                      {isTrailing && (
-                        <div className="mt-3 p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Initial Stop Price</span>
-                            <span className="flex h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                          </div>
-                          <div className="flex items-baseline gap-2">
-                             <span className="text-lg font-mono font-bold text-amber-400">${calculatePreviewStopPrice().toFixed(2)}</span>
-                             <span className="text-[9px] text-slate-500 font-bold uppercase tracking-tight">
-                               Dist: {trailingType === 'FIXED' ? `$${parseFloat(limitPrice) || 0}` : `${limitPrice || 0}%`} from market
-                             </span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
 
                   <div>
                     <div className="flex justify-between items-center mb-2">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Amount (Shares)</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Volume (Units)</label>
                       <div className="flex gap-2">
                         {[0.25, 0.5, 1].map((p) => (
                           <button 
@@ -758,7 +809,7 @@ const App: React.FC = () => {
 
                   <div className="bg-slate-800/40 p-5 rounded-2xl border border-slate-700/30 space-y-3 backdrop-blur-sm">
                     <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
-                      <span className="text-slate-500">Value Assessment</span>
+                      <span className="text-slate-500">Notional Allocation</span>
                       <span className="text-white font-mono">
                         ${((parseFloat(tradeAmount) || 0) * (orderType !== 'MARKET' ? (isTrailing ? selectedStock.price : parseFloat(limitPrice) || selectedStock.price) : selectedStock.price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
@@ -775,9 +826,9 @@ const App: React.FC = () => {
                           : 'bg-emerald-500/10 border-emerald-500/50 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 shadow-emerald-500/5'
                       }`}
                     >
-                      <span className="text-[10px] uppercase tracking-widest opacity-70 group-hover:opacity-100 transition-opacity">Long Position</span>
+                      <span className="text-[10px] uppercase tracking-widest opacity-70 group-hover:opacity-100 transition-opacity">Bullish</span>
                       <span className="text-base font-bold">
-                        {isScheduled ? 'Schedule Buy' : (orderType === 'LIMIT' ? 'Limit Buy' : 'Market Buy')}
+                        {isScheduled ? 'Schedule Buy' : (orderType === 'LIMIT' ? 'Limit Entry' : 'Market Entry')}
                       </span>
                     </button>
                     <button 
@@ -788,9 +839,9 @@ const App: React.FC = () => {
                           : 'bg-rose-500/10 border-rose-500/50 hover:bg-rose-500 text-rose-400 hover:text-white shadow-rose-500/5'
                       }`}
                     >
-                      <span className="text-[10px] uppercase tracking-widest opacity-70 group-hover:opacity-100 transition-opacity">Short Position</span>
+                      <span className="text-[10px] uppercase tracking-widest opacity-70 group-hover:opacity-100 transition-opacity">Bearish</span>
                       <span className="text-base font-bold">
-                        {isScheduled ? 'Schedule Sell' : (orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? (isTrailing ? 'Trailing Stop' : 'Stop Loss') : 'Market Sell')}
+                        {isScheduled ? 'Schedule Sell' : (orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? (isTrailing ? 'Trailing Stop' : 'Static Stop Loss') : 'Market Exit')}
                       </span>
                     </button>
                   </div>

@@ -65,22 +65,32 @@ const StockChart: React.FC<StockChartProps> = ({ stock }) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Market Chart</h3>
-        <div className="flex bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
-          {(['1H', '1D', '1W', '1M'] as TimeFrame[]).map((tf) => (
-            <button
-              key={tf}
-              onClick={() => setTimeframe(tf)}
-              className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all duration-200 ${
-                timeframe === tf 
-                  ? 'bg-emerald-500 text-slate-950 shadow-lg' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {tf}
-            </button>
-          ))}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Market Chart</h3>
+          <div className="flex bg-slate-800/50 p-1 rounded-lg border border-slate-700/50 shadow-inner">
+            {(['1H', '1D', '1W', '1M'] as TimeFrame[]).map((tf) => (
+              <button
+                key={tf}
+                onClick={() => setTimeframe(tf)}
+                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all duration-200 ${
+                  timeframe === tf 
+                    ? 'bg-emerald-500 text-slate-950 shadow-lg' 
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        {/* MARKET CAPITALIZATION DISPLAY - BELOW TIMEFRAME CONTROLS */}
+        <div className="flex justify-end items-center gap-2 pr-1">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Market Cap:</span>
+          <span className="text-xs font-mono font-bold text-slate-200 bg-slate-800/30 px-2 py-0.5 rounded border border-slate-700/50">
+            ${stock.marketCap}
+          </span>
         </div>
       </div>
 
