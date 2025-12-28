@@ -45,7 +45,7 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
           <thead>
             <tr className="bg-slate-800/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800/50">
               <th className="px-6 py-4">Symbol</th>
-              <th className="px-6 py-4">Order Reference</th>
+              <th className="px-6 py-4">Order ID</th>
               <th className="px-6 py-4">Side</th>
               <th className="px-6 py-4">Type</th>
               <th className="px-6 py-4">Units</th>
@@ -81,9 +81,10 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
                     <div className="flex items-center gap-2">
                       <div className="relative">
                         <div 
-                          className="flex items-center gap-1.5 bg-slate-950/40 px-2.5 py-1 rounded-lg border border-slate-800/50 group-hover:border-slate-700 transition-colors" 
+                          className="flex items-center gap-1.5 bg-slate-950/60 px-2.5 py-1 rounded-lg border border-slate-800/50 group-hover:border-slate-700 transition-colors shadow-inner" 
                         >
-                          <span className="font-mono text-[10px] font-bold text-slate-400">
+                          <span className="text-[8px] font-black text-slate-600 mr-1 uppercase">ID</span>
+                          <span className="font-mono text-[10px] font-black text-slate-300">
                             {order.orderId.substring(0, 8).toUpperCase()}
                           </span>
                         </div>
@@ -96,8 +97,9 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
                       <button 
                         onClick={() => handleCopyId(order.orderId)}
                         className={`p-1 rounded-md transition-all opacity-0 group-hover:opacity-100 ${copiedId === order.orderId ? 'text-emerald-400' : 'text-slate-600 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                        title="Copy Full Transaction ID"
                       >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
                         </svg>
                       </button>

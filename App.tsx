@@ -49,6 +49,7 @@ const App: React.FC = () => {
   const [isNewsLoading, setIsNewsLoading] = useState<boolean>(false);
   
   // Form State
+  const [tradeSide, setTradeSide] = useState<OrderSide>('BUY');
   const [tradeAmount, setTradeAmount] = useState<string>("");
   const [orderType, setOrderType] = useState<OrderType>('MARKET');
   const [limitPrice, setLimitPrice] = useState<string>("");
@@ -264,7 +265,8 @@ const App: React.FC = () => {
     return selectedStock.price - val;
   };
 
-  const handleTrade = (side: OrderSide) => {
+  const handleTrade = (sideOverride?: OrderSide) => {
+    const side = sideOverride || tradeSide;
     const shares = parseFloat(tradeAmount);
     const amountVal = parseFloat(limitPrice);
     let price = (orderType === 'LIMIT' || orderType === 'STOP_LOSS') ? amountVal : selectedStock.price;
@@ -435,6 +437,9 @@ const App: React.FC = () => {
   // 24h Stats Calculation
   const get24hHigh = () => Math.max(...selectedStock.history.map(p => p.price));
   const get24hLow = () => Math.min(...selectedStock.history.map(p => p.price));
+
+  const isBuy = tradeSide === 'BUY';
+  const themeColor = isBuy ? 'emerald' : 'rose';
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-200">
@@ -649,30 +654,59 @@ const App: React.FC = () => {
           <div className="space-y-6">
             {/* TRADE FORM SECTION */}
             <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden group">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-rose-500/5 opacity-50"></div>
+              <div className={`absolute inset-0 bg-gradient-to-br ${isBuy ? 'from-emerald-500/5' : 'from-rose-500/5'} to-transparent opacity-50`}></div>
               
               <div className="relative">
                 <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-6">
-                  <div className="w-2 h-5 bg-emerald-500 rounded-full"></div>
+                  <div className={`w-2 h-5 ${isBuy ? 'bg-emerald-500' : 'bg-rose-500'} rounded-full`}></div>
                   Trade Execution
                 </h3>
 
-                <div className="grid grid-cols-3 gap-2 mb-4 p-1.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 backdrop-blur-md">
+                {/* SIDE SELECTOR TOGGLE - DISTINCT BUY/SELL BUTTONS */}
+                <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 backdrop-blur-md">
+                  <button 
+                    onClick={() => setTradeSide('BUY')}
+                    className={`py-3 text-xs font-black uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-0.5 ${
+                      isBuy 
+                        ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' 
+                        : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
+                    }`}
+                  >
+                    <span>Long / Buy</span>
+                    <span className="text-[8px] opacity-60">Entry</span>
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setTradeSide('SELL');
+                    }}
+                    className={`py-3 text-xs font-black uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-0.5 ${
+                      !isBuy 
+                        ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30' 
+                        : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
+                    }`}
+                  >
+                    <span>Short / Sell</span>
+                    <span className="text-[8px] opacity-60">Exit</span>
+                  </button>
+                </div>
+
+                {/* ORDER TYPE SELECTOR */}
+                <div className="grid grid-cols-3 gap-2 mb-4 p-1.5 bg-slate-800/40 rounded-2xl border border-slate-800 backdrop-blur-md">
                   {(['MARKET', 'LIMIT', 'STOP_LOSS'] as OrderType[]).map((type) => (
                     <button 
                       key={type}
+                      disabled={isBuy && type === 'STOP_LOSS'}
                       onClick={() => {
                         setOrderType(type);
                         if (type !== 'STOP_LOSS') setIsTrailing(false);
                       }}
                       className={`py-3 px-1 text-[10px] font-bold uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-1 ${
                         orderType === type 
-                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' 
-                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
-                      }`}
+                          ? `${isBuy ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/20 text-rose-400 border border-rose-500/20'} shadow-lg` 
+                          : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800/50'
+                      } ${isBuy && type === 'STOP_LOSS' ? 'opacity-30 cursor-not-allowed' : ''}`}
                     >
                       <span className="tracking-tighter">{type.replace('_', ' ')}</span>
-                      {orderType === type && <div className="w-1 h-1 bg-slate-950 rounded-full"></div>}
                     </button>
                   ))}
                 </div>
@@ -706,7 +740,7 @@ const App: React.FC = () => {
                   )}
                 </div>
 
-                {orderType === 'STOP_LOSS' && (
+                {orderType === 'STOP_LOSS' && !isBuy && (
                   <div className="space-y-3 mb-6 animate-in slide-in-from-top-4 duration-300">
                     <div className="flex items-center justify-between px-2 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
                       <div className="flex flex-col">
@@ -715,7 +749,7 @@ const App: React.FC = () => {
                       </div>
                       <button 
                         onClick={() => setIsTrailing(!isTrailing)}
-                        className={`w-10 h-5 rounded-full relative transition-colors ${isTrailing ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                        className={`w-10 h-5 rounded-full relative transition-colors ${isTrailing ? 'bg-rose-500' : 'bg-slate-700'}`}
                       >
                         <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isTrailing ? 'left-6' : 'left-1'}`} />
                       </button>
@@ -730,7 +764,7 @@ const App: React.FC = () => {
                               onClick={() => setTrailingType(type)}
                               className={`py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
                                 trailingType === type 
-                                  ? 'bg-slate-700 text-amber-400 border border-amber-500/20 shadow-inner' 
+                                  ? 'bg-slate-700 text-rose-400 border border-rose-500/20 shadow-inner' 
                                   : 'text-slate-500 hover:text-slate-300'
                               }`}
                             >
@@ -738,10 +772,10 @@ const App: React.FC = () => {
                             </button>
                           ))}
                         </div>
-                        <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl flex items-center justify-between">
+                        <div className="p-3 bg-rose-500/5 border border-rose-500/10 rounded-xl flex items-center justify-between">
                            <div>
                               <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Live Stop Preview</p>
-                              <p className="text-lg font-mono font-bold text-emerald-400 leading-none">
+                              <p className="text-lg font-mono font-bold text-rose-400 leading-none">
                                 ${calculatePreviewStopPrice().toFixed(2)}
                               </p>
                            </div>
@@ -767,17 +801,17 @@ const App: React.FC = () => {
                       </div>
                       <div className="relative group/input">
                         {(!isTrailing || trailingType === 'FIXED') && (
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-emerald-400 transition-colors">$</span>
+                          <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-${themeColor}-400 transition-colors`}>$</span>
                         )}
                         <input 
                           type="number" 
                           value={limitPrice}
                           onChange={(e) => setLimitPrice(e.target.value)}
                           placeholder={isTrailing ? (trailingType === 'PERCENT' ? "5.00" : "10.00") : selectedStock.price.toFixed(2)}
-                          className={`w-full bg-slate-800/80 border border-slate-700 rounded-2xl pr-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all placeholder:text-slate-700 ${(!isTrailing || trailingType === 'FIXED') ? 'pl-8' : 'pl-4'}`}
+                          className={`w-full bg-slate-800/80 border border-slate-700 rounded-2xl pr-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-${themeColor}-500/50 transition-all placeholder:text-slate-700 ${(!isTrailing || trailingType === 'FIXED') ? 'pl-8' : 'pl-4'}`}
                         />
                         {isTrailing && trailingType === 'PERCENT' && (
-                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-emerald-400 transition-colors">%</span>
+                          <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-${themeColor}-400 transition-colors`}>%</span>
                         )}
                       </div>
                     </div>
@@ -791,7 +825,7 @@ const App: React.FC = () => {
                           <button 
                             key={p}
                             onClick={() => handleQuickAmount(p)}
-                            className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-500 text-[9px] font-bold hover:text-emerald-400 transition-colors border border-slate-700/50"
+                            className={`px-2 py-0.5 rounded-md bg-slate-800 text-slate-500 text-[9px] font-bold hover:text-${themeColor}-400 transition-colors border border-slate-700/50`}
                           >
                             {p === 1 ? 'MAX' : `${p * 100}%`}
                           </button>
@@ -803,7 +837,7 @@ const App: React.FC = () => {
                       value={tradeAmount}
                       onChange={(e) => setTradeAmount(e.target.value)}
                       placeholder="0.00"
-                      className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl px-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all placeholder:text-slate-700"
+                      className={`w-full bg-slate-800/80 border border-slate-700 rounded-2xl px-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-${themeColor}-500/50 transition-all placeholder:text-slate-700`}
                     />
                   </div>
 
@@ -816,34 +850,52 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 pt-4">
-                    <button 
-                      onClick={() => handleTrade('BUY')}
-                      disabled={orderType === 'STOP_LOSS'}
-                      className={`group font-bold py-5 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 border-2 ${
-                        orderType === 'STOP_LOSS' 
-                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed border-slate-700 opacity-50' 
-                          : 'bg-emerald-500/10 border-emerald-500/50 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 shadow-emerald-500/5'
-                      }`}
-                    >
-                      <span className="text-[10px] uppercase tracking-widest opacity-70 group-hover:opacity-100 transition-opacity">Bullish</span>
-                      <span className="text-base font-bold">
-                        {isScheduled ? 'Schedule Buy' : (orderType === 'LIMIT' ? 'Limit Entry' : 'Market Entry')}
-                      </span>
-                    </button>
-                    <button 
-                      onClick={() => handleTrade('SELL')}
-                      className={`group font-bold py-5 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 border-2 ${
-                        orderType === 'STOP_LOSS'
-                          ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/10 border-amber-500/30'
-                          : 'bg-rose-500/10 border-rose-500/50 hover:bg-rose-500 text-rose-400 hover:text-white shadow-rose-500/5'
-                      }`}
-                    >
-                      <span className="text-[10px] uppercase tracking-widest opacity-70 group-hover:opacity-100 transition-opacity">Bearish</span>
-                      <span className="text-base font-bold">
-                        {isScheduled ? 'Schedule Sell' : (orderType === 'LIMIT' ? 'Limit Sell' : orderType === 'STOP_LOSS' ? (isTrailing ? 'Trailing Stop' : 'Static Stop Loss') : 'Market Exit')}
-                      </span>
-                    </button>
+                  {/* UNIFIED DYNAMIC EXECUTION BUTTON AREA */}
+                  <div className="pt-4">
+                    {orderType === 'LIMIT' ? (
+                      <div className="grid grid-cols-2 gap-4 animate-in fade-in zoom-in duration-300">
+                        <button 
+                          onClick={() => handleTrade('BUY')}
+                          className="group relative flex flex-col items-center justify-center py-6 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-95 border-2 border-emerald-400/30 overflow-hidden"
+                        >
+                           <div className="absolute top-0 right-0 p-1 opacity-20">
+                              <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>
+                           </div>
+                           <span className="text-[10px] uppercase tracking-widest opacity-80 mb-1">Entry</span>
+                           <span className="text-lg uppercase">Limit Buy</span>
+                           <span className="text-[8px] font-mono opacity-60 mt-1">@ ${limitPrice || '0.00'}</span>
+                        </button>
+                        
+                        <button 
+                          onClick={() => handleTrade('SELL')}
+                          className="group relative flex flex-col items-center justify-center py-6 bg-rose-500 hover:bg-rose-400 text-white font-black rounded-2xl transition-all shadow-xl shadow-rose-500/20 active:scale-95 border-2 border-rose-400/30 overflow-hidden"
+                        >
+                           <div className="absolute top-0 right-0 p-1 opacity-20">
+                              <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" /></svg>
+                           </div>
+                           <span className="text-[10px] uppercase tracking-widest opacity-80 mb-1">Exit</span>
+                           <span className="text-lg uppercase">Limit Sell</span>
+                           <span className="text-[8px] font-mono opacity-60 mt-1">@ ${limitPrice || '0.00'}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => handleTrade()}
+                        disabled={isBuy && orderType === 'STOP_LOSS'}
+                        className={`w-full group font-black py-6 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 border-2 ${
+                          isBuy 
+                            ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-400/30 shadow-emerald-500/20' 
+                            : 'bg-rose-500 hover:bg-rose-400 text-white border-rose-400/30 shadow-rose-500/20'
+                        } ${isBuy && orderType === 'STOP_LOSS' ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
+                      >
+                        <span className="text-[10px] uppercase tracking-widest opacity-80 group-hover:opacity-100 transition-opacity">
+                          {isScheduled ? 'Scheduled Execution' : 'Instant Execution'}
+                        </span>
+                        <span className="text-lg font-black uppercase">
+                          {isBuy ? 'Confirm Buy Order' : (orderType === 'STOP_LOSS' ? (isTrailing ? 'Set Trailing Stop' : 'Set Stop Loss') : 'Confirm Sell Order')}
+                        </span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
