@@ -28,8 +28,8 @@ const PortfolioChart: React.FC<PortfolioChartProps> = ({ history }) => {
   const chartColor = isPositive ? '#10b981' : '#f43f5e';
 
   return (
-    <div className="h-48 w-full mt-4">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="h-48 w-full mt-4 relative">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <AreaChart data={history}>
           <defs>
             <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { ExecutedOrder, StockData } from '../types';
 
@@ -17,48 +16,50 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-      <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/20">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-            <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+    <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative">
+      <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/20 backdrop-blur-md">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-inner">
+            <svg className="w-6 h-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
           <div>
-            <h3 className="text-lg font-bold text-white leading-tight">Execution Ledger</h3>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Verified Trade History</p>
+            <h3 className="text-lg font-black text-white uppercase tracking-tight leading-tight">Execution Ledger</h3>
+            <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mt-0.5">Verified Institutional History</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 shadow-inner">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/50 border border-slate-800 shadow-inner">
              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Sync</span>
+             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Audited Sync</span>
           </div>
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-            {history.length} Transactions
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest bg-slate-800 px-4 py-1.5 rounded-xl border border-slate-700 shadow-sm">
+            {history.length} Entries
           </span>
         </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="bg-slate-800/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800/50">
-              <th className="px-6 py-4">Symbol</th>
-              <th className="px-6 py-4">Order ID</th>
-              <th className="px-6 py-4">Side</th>
-              <th className="px-6 py-4">Type</th>
-              <th className="px-6 py-4">Units</th>
-              <th className="px-6 py-4 text-right">Price</th>
-              <th className="px-6 py-4 text-right">P&L (Current)</th>
-              <th className="px-6 py-4 text-right">Notional Value</th>
-              <th className="px-6 py-4">Timestamp</th>
+            <tr className="bg-slate-800/30 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-800/50">
+              <th className="px-6 py-5">Asset</th>
+              <th className="px-6 py-5">Order REF</th>
+              <th className="px-6 py-5">Market Cap</th>
+              <th className="px-6 py-5">Side</th>
+              <th className="px-6 py-5">Type</th>
+              <th className="px-6 py-5">Volume</th>
+              <th className="px-6 py-5 text-right">Price</th>
+              <th className="px-6 py-5 text-right">Yield</th>
+              <th className="px-6 py-5 text-right">Notional</th>
+              <th className="px-6 py-5">Timestamp</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/50">
+          <tbody className="divide-y divide-slate-800/30">
             {history.slice().reverse().map((order) => {
               const stock = stocks.find(s => s.symbol === order.symbol);
               const currentPrice = stock?.price || order.price;
+              const marketCap = stock?.marketCap || 'N/A';
               
               const pnl = order.side === 'BUY' 
                 ? (currentPrice - order.price) * order.shares
@@ -66,47 +67,52 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
               
               const pnlPercent = (pnl / (order.price * order.shares)) * 100;
               const isPositive = pnl >= 0;
+              const shortenedId = order.orderId.substring(0, 4).toUpperCase() + '-' + order.orderId.substring(order.orderId.length - 4).toUpperCase();
 
               return (
                 <tr key={order.orderId} className="hover:bg-slate-800/20 transition-all duration-200 group">
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-5">
                     <div className="flex flex-col">
-                      <span className="font-bold text-white font-mono tracking-tight">{order.symbol}</span>
-                      <span className="text-[9px] text-slate-500 font-medium uppercase tracking-tighter">
-                        {stocks.find(s => s.symbol === order.symbol)?.name || 'N/A'}
+                      <span className="font-black text-white font-mono text-sm tracking-tight">{order.symbol}</span>
+                      <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest mt-0.5">
+                        {stock?.name || 'N/A'}
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-5">
                     <div className="flex items-center gap-2">
-                      <div className="relative">
-                        <div 
-                          className="flex items-center gap-1.5 bg-slate-950/60 px-2.5 py-1 rounded-lg border border-slate-800/50 group-hover:border-slate-700 transition-colors shadow-inner" 
+                      <div className="relative group/id">
+                        <button 
+                          onClick={() => handleCopyId(order.orderId)}
+                          className="flex items-center gap-2 bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-800 shadow-inner group-hover/id:border-emerald-500/50 group-hover/id:bg-slate-900 transition-all cursor-pointer"
+                          title="Click to Copy Order REF"
                         >
-                          <span className="text-[8px] font-black text-slate-600 mr-1 uppercase">ID</span>
-                          <span className="font-mono text-[10px] font-black text-slate-300">
-                            {order.orderId.substring(0, 8).toUpperCase()}
+                          <span className="text-[8px] font-black text-slate-600 tracking-widest uppercase">REF</span>
+                          <span className="font-mono text-[10px] font-black text-slate-300 group-hover/id:text-emerald-400">
+                            {shortenedId}
                           </span>
-                        </div>
+                        </button>
                         {copiedId === order.orderId && (
-                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-emerald-500 text-slate-950 text-[9px] font-black py-1 px-2 rounded-lg shadow-lg shadow-emerald-500/20 animate-bounce z-10 whitespace-nowrap border border-emerald-400">
-                            COPIED
+                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-emerald-500 text-slate-950 text-[9px] font-black py-1 px-3 rounded-lg shadow-xl shadow-emerald-500/20 animate-bounce z-20 whitespace-nowrap uppercase tracking-tighter ring-2 ring-slate-900 border border-emerald-300">
+                            Copied
                           </div>
                         )}
                       </div>
-                      <button 
-                        onClick={() => handleCopyId(order.orderId)}
-                        className={`p-1 rounded-md transition-all opacity-0 group-hover:opacity-100 ${copiedId === order.orderId ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-600 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
-                        title="Copy Full Transaction ID"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-                        </svg>
-                      </button>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border ${
+                  <td className="px-6 py-5">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 shadow-inner w-fit">
+                        <div className="w-1 h-1 rounded-full bg-slate-600"></div>
+                        <span className="text-[10px] font-mono font-black text-slate-300">
+                          ${marketCap}
+                        </span>
+                      </div>
+                      <span className="text-[8px] text-slate-600 font-black uppercase tracking-widest mt-1 ml-1">Valuation</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <span className={`px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
                       order.side === 'BUY' 
                         ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
                         : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
@@ -114,34 +120,34 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
                       {order.side}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{order.type.replace('_', ' ')}</span>
+                  <td className="px-6 py-5">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-[0.15em]">{order.type.replace('_', ' ')}</span>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs text-slate-300 font-mono font-medium">{order.shares.toLocaleString()}</span>
+                  <td className="px-6 py-5">
+                    <span className="text-xs text-slate-300 font-mono font-bold">{order.shares.toLocaleString()}</span>
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="text-xs text-slate-300 font-mono font-medium">${order.price.toFixed(2)}</span>
+                  <td className="px-6 py-5 text-right">
+                    <span className="text-xs text-slate-300 font-mono font-bold">${order.price.toFixed(2)}</span>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-5 text-right">
                     <div className="flex flex-col items-end">
-                      <span className={`text-xs font-mono font-bold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <span className={`text-xs font-mono font-black ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {isPositive ? '▲' : '▼'} {isPositive ? '+' : '-'}${Math.abs(pnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
-                      <span className={`text-[9px] font-black tracking-widest ${isPositive ? 'text-emerald-500/60' : 'text-rose-500/60'} uppercase`}>
+                      <span className={`text-[9px] font-black tracking-widest ${isPositive ? 'text-emerald-500/60' : 'text-rose-500/60'} uppercase mt-0.5`}>
                         {isPositive ? '+' : ''}{pnlPercent.toFixed(2)}%
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="text-sm font-bold text-white font-mono">
+                  <td className="px-6 py-5 text-right">
+                    <span className="text-sm font-black text-white font-mono tracking-tighter">
                       ${(order.shares * order.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-5">
                     <div className="flex flex-col">
-                      <span className="text-[10px] text-slate-200 font-medium">{new Date(order.timestamp).toLocaleDateString()}</span>
-                      <span className="text-[9px] text-slate-500 font-mono">{new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-[10px] text-slate-200 font-black uppercase tracking-tighter">{new Date(order.timestamp).toLocaleDateString()}</span>
+                      <span className="text-[9px] text-slate-500 font-mono mt-0.5">{new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                     </div>
                   </td>
                 </tr>
@@ -149,12 +155,17 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
             })}
             {history.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-6 py-20 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <svg className="w-8 h-8 text-slate-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">No Executed Trades Found</p>
+                <td colSpan={10} className="px-6 py-28 text-center bg-slate-900/40">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="p-4 bg-slate-800/30 rounded-full border border-slate-700 shadow-inner">
+                      <svg className="w-10 h-10 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-slate-600 uppercase tracking-[0.3em]">No Recorded History</p>
+                      <p className="text-[9px] text-slate-700 uppercase font-bold tracking-widest mt-1">Deploy capital to begin tracking</p>
+                    </div>
                   </div>
                 </td>
               </tr>

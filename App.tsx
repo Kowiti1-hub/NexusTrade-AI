@@ -256,13 +256,14 @@ const App: React.FC = () => {
     fetchStockData(selectedStock);
   }, [selectedSymbol, fetchStockData]);
 
-  const calculatePreviewStopPrice = () => {
-    const val = parseFloat(limitPrice);
-    if (isNaN(val) || val <= 0) return selectedStock.price;
+  const calculatePreviewStopPrice = (customBasePrice?: number, customLimitPrice?: string) => {
+    const base = customBasePrice || selectedStock.price;
+    const val = parseFloat(customLimitPrice || limitPrice);
+    if (isNaN(val) || val <= 0) return base;
     if (trailingType === 'PERCENT') {
-      return selectedStock.price * (1 - val / 100);
+      return base * (1 - val / 100);
     }
-    return selectedStock.price - val;
+    return base - val;
   };
 
   const handleTrade = (sideOverride?: OrderSide) => {
@@ -428,13 +429,63 @@ const App: React.FC = () => {
     });
   };
 
+  const updateOrder = (orderId: string, updatedFields: Partial<PendingOrder>) => {
+    setPortfolio(prev => {
+      const orderIndex = prev.pendingOrders.findIndex(o => o.orderId === orderId);
+      if (orderIndex === -1) return prev;
+
+      const oldOrder = prev.pendingOrders[orderIndex];
+      const newOrder = { ...oldOrder, ...updatedFields };
+
+      let newBalance = prev.balance;
+      const newPositions = [...prev.positions];
+
+      if (newOrder.side === 'BUY') {
+        const oldCost = oldOrder.shares * oldOrder.limitPrice;
+        const newCost = newOrder.shares * newOrder.limitPrice;
+        const diff = newCost - oldCost;
+        if (newBalance < diff) {
+          alert("Insufficient balance for this modification!");
+          return prev;
+        }
+        newBalance -= diff;
+      } else {
+        const existingPosIdx = newPositions.findIndex(p => p.symbol === newOrder.symbol);
+        const shareDiff = newOrder.shares - oldOrder.shares;
+        
+        if (shareDiff > 0) {
+          if (existingPosIdx === -1 || newPositions[existingPosIdx].shares < shareDiff) {
+            alert("Insufficient shares for this modification!");
+            return prev;
+          }
+          newPositions[existingPosIdx].shares -= shareDiff;
+        } else if (shareDiff < 0) {
+          if (existingPosIdx >= 0) {
+            newPositions[existingPosIdx].shares += Math.abs(shareDiff);
+          } else {
+            newPositions.push({ symbol: newOrder.symbol, shares: Math.abs(shareDiff), avgPrice: newOrder.limitPrice });
+          }
+        }
+      }
+
+      const newPendingOrders = [...prev.pendingOrders];
+      newPendingOrders[orderIndex] = newOrder;
+
+      return {
+        ...prev,
+        balance: newBalance,
+        positions: newPositions,
+        pendingOrders: newPendingOrders
+      };
+    });
+  };
+
   const handleQuickAmount = (percent: number) => {
     const price = (orderType !== 'MARKET' ? parseFloat(limitPrice) || selectedStock.price : selectedStock.price);
     const maxShares = Math.floor(portfolio.balance / price);
     setTradeAmount((maxShares * percent).toString());
   };
 
-  // 24h Stats Calculation
   const get24hHigh = () => Math.max(...selectedStock.history.map(p => p.price));
   const get24hLow = () => Math.min(...selectedStock.history.map(p => p.price));
 
@@ -652,7 +703,6 @@ const App: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            {/* TRADE FORM SECTION */}
             <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden group">
               <div className={`absolute inset-0 bg-gradient-to-br ${isBuy ? 'from-emerald-500/5' : 'from-rose-500/5'} to-transparent opacity-50`}></div>
               
@@ -662,35 +712,44 @@ const App: React.FC = () => {
                   Trade Execution
                 </h3>
 
-                {/* SIDE SELECTOR TOGGLE - DISTINCT BUY/SELL BUTTONS */}
-                <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 backdrop-blur-md">
-                  <button 
-                    onClick={() => setTradeSide('BUY')}
-                    className={`py-3 text-xs font-black uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-0.5 ${
-                      isBuy 
-                        ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' 
-                        : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
-                    }`}
-                  >
-                    <span>Long / Buy</span>
-                    <span className="text-[8px] opacity-60">Entry</span>
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setTradeSide('SELL');
-                    }}
-                    className={`py-3 text-xs font-black uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-0.5 ${
-                      !isBuy 
-                        ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30' 
-                        : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
-                    }`}
-                  >
-                    <span>Short / Sell</span>
-                    <span className="text-[8px] opacity-60">Exit</span>
-                  </button>
-                </div>
+                {orderType === 'LIMIT' ? (
+                  <div className="mb-6 p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 backdrop-blur-md flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-0.5">Order Strategy</span>
+                      <span className="text-xs font-bold text-white uppercase tracking-tighter">Dual-Terminal Limit Entry</span>
+                    </div>
+                    <div className="flex items-center gap-2 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20">
+                      <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></div>
+                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Active</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 backdrop-blur-md animate-in fade-in duration-300">
+                    <button 
+                      onClick={() => setTradeSide('BUY')}
+                      className={`py-3 text-xs font-black uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-0.5 ${
+                        isBuy 
+                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' 
+                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
+                      }`}
+                    >
+                      <span>Long / Buy</span>
+                      <span className="text-[8px] opacity-60">Entry</span>
+                    </button>
+                    <button 
+                      onClick={() => setTradeSide('SELL')}
+                      className={`py-3 text-xs font-black uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-0.5 ${
+                        !isBuy 
+                          ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30' 
+                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
+                      }`}
+                    >
+                      <span>Short / Sell</span>
+                      <span className="text-[8px] opacity-60">Exit</span>
+                    </button>
+                  </div>
+                )}
 
-                {/* ORDER TYPE SELECTOR */}
                 <div className="grid grid-cols-3 gap-2 mb-4 p-1.5 bg-slate-800/40 rounded-2xl border border-slate-800 backdrop-blur-md">
                   {(['MARKET', 'LIMIT', 'STOP_LOSS'] as OrderType[]).map((type) => (
                     <button 
@@ -702,7 +761,7 @@ const App: React.FC = () => {
                       }}
                       className={`py-3 px-1 text-[10px] font-bold uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-1 ${
                         orderType === type 
-                          ? `${isBuy ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/20 text-rose-400 border border-rose-500/20'} shadow-lg` 
+                          ? `${(isBuy || type === 'LIMIT') ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/20 text-rose-400 border border-rose-500/20'} shadow-lg` 
                           : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800/50'
                       } ${isBuy && type === 'STOP_LOSS' ? 'opacity-30 cursor-not-allowed' : ''}`}
                     >
@@ -850,32 +909,31 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* UNIFIED DYNAMIC EXECUTION BUTTON AREA */}
                   <div className="pt-4">
                     {orderType === 'LIMIT' ? (
-                      <div className="grid grid-cols-2 gap-4 animate-in fade-in zoom-in duration-300">
+                      <div className="grid grid-cols-2 gap-4 animate-in fade-in zoom-in duration-500">
                         <button 
                           onClick={() => handleTrade('BUY')}
-                          className="group relative flex flex-col items-center justify-center py-6 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-95 border-2 border-emerald-400/30 overflow-hidden"
+                          className="group relative flex flex-col items-center justify-center py-7 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-95 border-2 border-emerald-400/30 overflow-hidden"
                         >
-                           <div className="absolute top-0 right-0 p-1 opacity-20">
-                              <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>
+                           <div className="absolute -top-1 -right-1 p-2 opacity-10 rotate-12">
+                              <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 20 20"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>
                            </div>
-                           <span className="text-[10px] uppercase tracking-widest opacity-80 mb-1">Entry</span>
-                           <span className="text-lg uppercase">Limit Buy</span>
-                           <span className="text-[8px] font-mono opacity-60 mt-1">@ ${limitPrice || '0.00'}</span>
+                           <span className="text-[10px] uppercase tracking-[0.2em] font-black opacity-80 mb-1">Entry Strategy</span>
+                           <span className="text-xl uppercase tracking-tighter">Limit Buy</span>
+                           <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full mt-2 tracking-tight">@ ${limitPrice || '0.00'}</span>
                         </button>
                         
                         <button 
                           onClick={() => handleTrade('SELL')}
-                          className="group relative flex flex-col items-center justify-center py-6 bg-rose-500 hover:bg-rose-400 text-white font-black rounded-2xl transition-all shadow-xl shadow-rose-500/20 active:scale-95 border-2 border-rose-400/30 overflow-hidden"
+                          className="group relative flex flex-col items-center justify-center py-7 bg-rose-500 hover:bg-rose-400 text-white font-black rounded-2xl transition-all shadow-xl shadow-rose-500/20 active:scale-95 border-2 border-rose-400/30 overflow-hidden"
                         >
-                           <div className="absolute top-0 right-0 p-1 opacity-20">
-                              <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" /></svg>
+                           <div className="absolute -top-1 -right-1 p-2 opacity-10 -rotate-12">
+                              <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 20 20"><path d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" /></svg>
                            </div>
-                           <span className="text-[10px] uppercase tracking-widest opacity-80 mb-1">Exit</span>
-                           <span className="text-lg uppercase">Limit Sell</span>
-                           <span className="text-[8px] font-mono opacity-60 mt-1">@ ${limitPrice || '0.00'}</span>
+                           <span className="text-[10px] uppercase tracking-[0.2em] font-black opacity-80 mb-1">Exit Strategy</span>
+                           <span className="text-xl uppercase tracking-tighter">Limit Sell</span>
+                           <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full mt-2 tracking-tight">@ ${limitPrice || '0.00'}</span>
                         </button>
                       </div>
                     ) : (
@@ -937,6 +995,7 @@ const App: React.FC = () => {
             <PendingOrders 
               orders={portfolio.pendingOrders} 
               onCancel={cancelOrder} 
+              onUpdate={updateOrder}
             />
           </div>
         </div>
