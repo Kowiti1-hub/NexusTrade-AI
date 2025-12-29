@@ -89,14 +89,14 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ history, stocks }) => {
                           </span>
                         </div>
                         {copiedId === order.orderId && (
-                          <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-emerald-500 text-slate-950 text-[9px] font-black py-0.5 px-2 rounded shadow-lg animate-bounce z-10 whitespace-nowrap">
+                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-emerald-500 text-slate-950 text-[9px] font-black py-1 px-2 rounded-lg shadow-lg shadow-emerald-500/20 animate-bounce z-10 whitespace-nowrap border border-emerald-400">
                             COPIED
                           </div>
                         )}
                       </div>
                       <button 
                         onClick={() => handleCopyId(order.orderId)}
-                        className={`p-1 rounded-md transition-all opacity-0 group-hover:opacity-100 ${copiedId === order.orderId ? 'text-emerald-400' : 'text-slate-600 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                        className={`p-1 rounded-md transition-all opacity-0 group-hover:opacity-100 ${copiedId === order.orderId ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-600 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
                         title="Copy Full Transaction ID"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
