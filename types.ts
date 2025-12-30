@@ -28,6 +28,7 @@ export interface Position {
 
 export type OrderSide = 'BUY' | 'SELL';
 export type OrderType = 'MARKET' | 'LIMIT' | 'STOP_LOSS';
+export type OrderStatus = 'ACTIVE' | 'QUEUED' | 'REJECTED' | 'ALERT';
 export type TrailingType = 'FIXED' | 'PERCENT';
 
 export interface ExecutedOrder {
@@ -46,11 +47,11 @@ export interface PendingOrder {
   symbol: string;
   side: OrderSide;
   type: OrderType;
+  status: OrderStatus;
   shares: number;
-  limitPrice: number; // For Stop Loss, this acts as the "Stop Price"
+  limitPrice: number; 
   timestamp: number;
   scheduledTime?: number;
-  // Trailing stop-loss fields
   isTrailing?: boolean;
   trailingType?: TrailingType;
   trailingAmount?: number;

@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StockData, Portfolio, MarketInsight, Position, PendingOrder, OrderSide, OrderType, NewsArticle, PortfolioHistoryPoint, ExecutedOrder, TrailingType } from './types';
+import { StockData, Portfolio, MarketInsight, Position, PendingOrder, OrderSide, OrderType, OrderStatus, NewsArticle, PortfolioHistoryPoint, ExecutedOrder, TrailingType } from './types';
 import { INITIAL_STOCKS, INITIAL_BALANCE } from './constants';
 import Sidebar from './components/Sidebar';
 import StockChart from './components/StockChart';
@@ -75,6 +74,23 @@ const App: React.FC = () => {
   const selectedStock = stocks.find(s => s.symbol === selectedSymbol) || stocks[0];
   const currentPosition = portfolio.positions.find(p => p.symbol === selectedSymbol);
   
+  // Define helper variables and functions to resolve 'Cannot find name' errors
+  const isBuy = tradeSide === 'BUY';
+  const themeColor = isBuy ? 'emerald' : 'rose';
+
+  // Helper to calculate stop price preview for trailing stop orders
+  const calculatePreviewStopPrice = () => {
+    const stockPrice = selectedStock.price;
+    const amount = parseFloat(limitPrice);
+    if (isNaN(amount)) return stockPrice;
+    
+    if (trailingType === 'PERCENT') {
+      return stockPrice * (1 - amount / 100);
+    } else {
+      return stockPrice - amount;
+    }
+  };
+
   const portfolioRef = useRef(portfolio);
   portfolioRef.current = portfolio;
 
@@ -85,6 +101,7 @@ const App: React.FC = () => {
     }, 0);
 
     const pendingOrdersValue = currentPortfolio.pendingOrders.reduce((acc, order) => {
+      if (order.status === 'REJECTED') return acc;
       if (order.side === 'BUY') return acc + (order.shares * order.limitPrice);
       const stock = currentStocks.find(s => s.symbol === order.symbol);
       return acc + (order.shares * (stock?.price || order.limitPrice));
@@ -143,9 +160,12 @@ const App: React.FC = () => {
     const now = Date.now();
 
     const newPendingOrders = portfolio.pendingOrders.map(order => {
+      if (order.status === 'REJECTED') return order;
+
       const stock = stocks.find(s => s.symbol === order.symbol);
       if (!stock) return order;
 
+      // Update Trailing Logic
       if (order.type === 'STOP_LOSS' && order.isTrailing) {
         if (!order.scheduledTime || now >= order.scheduledTime) {
           if (stock.price > (order.highestPriceObserved || 0)) {
@@ -164,10 +184,26 @@ const App: React.FC = () => {
           }
         }
       }
+
+      // Proximity Alert Check
+      const isClose = Math.abs((stock.price - order.limitPrice) / order.limitPrice) < 0.005;
+      const isTimeReached = !order.scheduledTime || now >= order.scheduledTime;
+      const newStatus: OrderStatus = !isTimeReached ? 'QUEUED' : (isClose ? 'ALERT' : 'ACTIVE');
+      
+      if (order.status !== newStatus) {
+        stateChanged = true;
+        return { ...order, status: newStatus };
+      }
+
       return order;
     });
 
     newPendingOrders.forEach(order => {
+      if (order.status === 'REJECTED') {
+        remainingOrders.push(order);
+        return;
+      }
+
       const stock = stocks.find(s => s.symbol === order.symbol);
       if (!stock) return;
 
@@ -186,8 +222,14 @@ const App: React.FC = () => {
       }
 
       if (isTriggered) {
-        triggeredOrders.push(order);
-        stateChanged = true;
+        // Random 2% failure simulation for institutional realism
+        if (Math.random() < 0.02) {
+          remainingOrders.push({ ...order, status: 'REJECTED' });
+          stateChanged = true;
+        } else {
+          triggeredOrders.push(order);
+          stateChanged = true;
+        }
       } else {
         remainingOrders.push(order);
       }
@@ -256,16 +298,6 @@ const App: React.FC = () => {
     fetchStockData(selectedStock);
   }, [selectedSymbol, fetchStockData]);
 
-  const calculatePreviewStopPrice = (customBasePrice?: number, customLimitPrice?: string) => {
-    const base = customBasePrice || selectedStock.price;
-    const val = parseFloat(customLimitPrice || limitPrice);
-    if (isNaN(val) || val <= 0) return base;
-    if (trailingType === 'PERCENT') {
-      return base * (1 - val / 100);
-    }
-    return base - val;
-  };
-
   const handleTrade = (sideOverride?: OrderSide) => {
     const side = sideOverride || tradeSide;
     const shares = parseFloat(tradeAmount);
@@ -279,30 +311,12 @@ const App: React.FC = () => {
       price = calculatePreviewStopPrice();
     }
 
-    if (orderType === 'STOP_LOSS' && side === 'BUY') {
-      alert("Stop loss is typically used for selling to limit losses on a position.");
-      return;
-    }
-
     const scheduledTimestamp = isScheduled && scheduledTime ? new Date(scheduledTime).getTime() : undefined;
-    if (isScheduled && (!scheduledTimestamp || scheduledTimestamp <= Date.now())) {
-      alert("Please select a valid future date and time.");
-      return;
-    }
-
     const totalValue = shares * (orderType === 'MARKET' ? selectedStock.price : (isTrailing ? selectedStock.price : price));
 
-    if (side === 'BUY') {
-      if (portfolio.balance < totalValue) {
-        alert("Insufficient balance!");
-        return;
-      }
-    } else {
-      const existingPos = portfolio.positions.find(p => p.symbol === selectedSymbol);
-      if (!existingPos || existingPos.shares < shares) {
-        alert("Insufficient shares in active position!");
-        return;
-      }
+    if (side === 'BUY' && portfolio.balance < totalValue) {
+      alert("Insufficient balance!");
+      return;
     }
 
     setPendingTrade({
@@ -329,6 +343,7 @@ const App: React.FC = () => {
         symbol,
         side,
         type: orderType,
+        status: tradeSchedTime ? 'QUEUED' : 'ACTIVE',
         shares,
         limitPrice: price,
         timestamp: Date.now(),
@@ -402,12 +417,16 @@ const App: React.FC = () => {
     setIsScheduled(false);
     setScheduledTime("");
     setPendingTrade(null);
+    setIsTrailing(false);
   };
 
   const cancelOrder = (orderId: string) => {
     setPortfolio(prev => {
       const order = prev.pendingOrders.find(o => o.orderId === orderId);
       if (!order) return prev;
+      if (order.status === 'REJECTED') {
+        return { ...prev, pendingOrders: prev.pendingOrders.filter(o => o.orderId !== orderId) };
+      }
       let newBalance = prev.balance;
       const newPositions = [...prev.positions];
       if (order.side === 'BUY') {
@@ -433,584 +452,186 @@ const App: React.FC = () => {
     setPortfolio(prev => {
       const orderIndex = prev.pendingOrders.findIndex(o => o.orderId === orderId);
       if (orderIndex === -1) return prev;
-
       const oldOrder = prev.pendingOrders[orderIndex];
       const newOrder = { ...oldOrder, ...updatedFields };
-
-      let newBalance = prev.balance;
-      const newPositions = [...prev.positions];
-
-      if (newOrder.side === 'BUY') {
-        const oldCost = oldOrder.shares * oldOrder.limitPrice;
-        const newCost = newOrder.shares * newOrder.limitPrice;
-        const diff = newCost - oldCost;
-        if (newBalance < diff) {
-          alert("Insufficient balance for this modification!");
-          return prev;
-        }
-        newBalance -= diff;
-      } else {
-        const existingPosIdx = newPositions.findIndex(p => p.symbol === newOrder.symbol);
-        const shareDiff = newOrder.shares - oldOrder.shares;
-        
-        if (shareDiff > 0) {
-          if (existingPosIdx === -1 || newPositions[existingPosIdx].shares < shareDiff) {
-            alert("Insufficient shares for this modification!");
-            return prev;
-          }
-          newPositions[existingPosIdx].shares -= shareDiff;
-        } else if (shareDiff < 0) {
-          if (existingPosIdx >= 0) {
-            newPositions[existingPosIdx].shares += Math.abs(shareDiff);
-          } else {
-            newPositions.push({ symbol: newOrder.symbol, shares: Math.abs(shareDiff), avgPrice: newOrder.limitPrice });
-          }
-        }
-      }
-
-      const newPendingOrders = [...prev.pendingOrders];
+      let newPendingOrders = [...prev.pendingOrders];
       newPendingOrders[orderIndex] = newOrder;
-
-      return {
-        ...prev,
-        balance: newBalance,
-        positions: newPositions,
-        pendingOrders: newPendingOrders
-      };
+      return { ...prev, pendingOrders: newPendingOrders };
     });
   };
 
-  const handleQuickAmount = (percent: number) => {
-    const price = (orderType !== 'MARKET' ? parseFloat(limitPrice) || selectedStock.price : selectedStock.price);
-    const maxShares = Math.floor(portfolio.balance / price);
-    setTradeAmount((maxShares * percent).toString());
-  };
-
-  const get24hHigh = () => Math.max(...selectedStock.history.map(p => p.price));
-  const get24hLow = () => Math.min(...selectedStock.history.map(p => p.price));
-
-  const isBuy = tradeSide === 'BUY';
-  const themeColor = isBuy ? 'emerald' : 'rose';
-
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-200">
-      <Sidebar 
-        stocks={stocks} 
-        selectedSymbol={selectedSymbol} 
-        onSelectStock={setSelectedSymbol}
-        portfolioValue={currentTotalValue}
-      />
-
-      <main className="flex-1 flex flex-col p-8 overflow-y-auto">
-        <div className="grid grid-cols-3 gap-8 mb-8">
-          <section className="col-span-3 bg-slate-900/40 border border-slate-800 p-6 rounded-3xl shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-6 flex items-center gap-3">
+    <div className="flex h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden">
+      <Sidebar stocks={stocks} selectedSymbol={selectedSymbol} onSelectStock={setSelectedSymbol} portfolioValue={currentTotalValue} />
+      <main className="flex-1 flex flex-col h-full overflow-y-auto custom-scrollbar p-4 lg:p-6">
+        <div className="max-w-[1700px] mx-auto w-full space-y-6">
+          <section className="bg-slate-900/40 border border-slate-800 p-4 rounded-3xl shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 flex items-center gap-3">
               <div className="flex items-center gap-2 px-3 py-1 bg-slate-800/80 backdrop-blur rounded-full border border-slate-700">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Market Live</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Flow</span>
               </div>
             </div>
-            
-            <div className="flex flex-col md:flex-row justify-between gap-8 mb-6">
-              <div className="space-y-1">
-                <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Net Worth</h2>
+            <div className="flex flex-col md:flex-row justify-between gap-6 mb-4">
+              <div className="space-y-0.5">
+                <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Liquid Worth</h2>
                 <div className="flex items-baseline gap-4">
-                  <span className="text-4xl font-mono font-bold text-white tracking-tight">
-                    ${currentTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <div className={`flex items-center gap-1 font-bold text-sm ${totalGainLoss >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  <span className="text-3xl lg:text-4xl font-mono font-bold text-white tracking-tight">${currentTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <div className={`flex items-center gap-1 font-bold text-xs ${totalGainLoss >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     <span>{totalGainLoss >= 0 ? '▲' : '▼'}</span>
-                    <span>${Math.abs(totalGainLoss).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    <span>({gainLossPercent.toFixed(2)}%)</span>
+                    <span>${Math.abs(totalGainLoss).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({gainLossPercent.toFixed(2)}%)</span>
                   </div>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-8 items-center">
-                <div className="space-y-1 border-l border-slate-800 pl-4">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cash</span>
-                  <p className="text-lg font-mono text-slate-200">${portfolio.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-6 items-center">
+                <div className="space-y-0.5 border-l border-slate-800 pl-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Buying Power</span>
+                  <p className="text-md font-mono text-slate-200">${portfolio.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
-                <div className="space-y-1 border-l border-slate-800 pl-4">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invested</span>
-                  <p className="text-lg font-mono text-slate-200">${investedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                </div>
-                <div className="space-y-1 border-l border-slate-800 pl-4 hidden md:block">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total P&L</span>
-                  <p className={`text-lg font-mono font-bold ${totalGainLoss >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {totalGainLoss >= 0 ? '+' : ''}{gainLossPercent.toFixed(2)}%
-                  </p>
+                <div className="space-y-0.5 border-l border-slate-800 pl-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Allocated</span>
+                  <p className="text-md font-mono text-slate-200">${investedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
               </div>
             </div>
-
             <PortfolioChart history={portfolioHistory} />
           </section>
-        </div>
 
-        <header className="flex justify-between items-start mb-4">
-          <div>
-            <h1 className="text-4xl font-bold text-white mb-2">{selectedStock.name}</h1>
-            <div className="flex items-center gap-4">
-              <span className="bg-slate-800 text-slate-300 font-mono px-2 py-1 rounded text-sm font-bold">
-                {selectedSymbol}
-              </span>
-              <span className="text-3xl font-mono font-medium text-white">
-                ${selectedStock.price.toFixed(2)}
-              </span>
-              <span className={`text-lg font-medium ${selectedStock.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {selectedStock.change >= 0 ? '+' : ''}{selectedStock.change.toFixed(2)} ({selectedStock.changePercent}%)
-              </span>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3">
-             <div className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg flex items-center gap-2 shadow-sm">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status:</span>
-                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-400/10 px-1.5 py-0.5 rounded">Market Open</span>
-             </div>
-          </div>
-        </header>
-
-        <div className="grid grid-cols-3 gap-8 mb-8">
-          <div className="col-span-2 space-y-8">
-            <section className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 shadow-lg">
-              <StockChart stock={selectedStock} />
-            </section>
-
-            <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-top-4 duration-500 backdrop-blur-md">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-emerald-500/10 rounded-lg">
-                    <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h1.5a2.5 2.5 0 012.5 2.5v.665M19 15.574V14a2 2 0 00-2-2H15M13 18v3" />
-                    </svg>
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-200 uppercase tracking-widest">Market Fundamental Data</h3>
-                </div>
-                <span className="text-[10px] font-black text-slate-500 bg-slate-800 px-2 py-0.5 rounded uppercase tracking-tighter">Real-time Metrics</span>
+          <header className="flex justify-between items-end gap-6 px-2">
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <h1 className="text-3xl font-bold text-white">{selectedStock.name}</h1>
+                <span className="bg-slate-800 text-slate-300 font-mono px-2 py-0.5 rounded text-[10px] font-bold border border-slate-700/50">{selectedSymbol}</span>
               </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Market Capitalization</label>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-mono font-bold text-white tracking-tighter">
-                      ${selectedStock.marketCap}
-                    </p>
-                    <span className="text-[10px] font-bold text-slate-500">USD</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                     <p className="text-[9px] text-emerald-400 font-bold uppercase tracking-widest">Tier 1 Asset</p>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 border-l border-slate-800/50 pl-8">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Trading Volume</label>
-                  <p className="text-3xl font-mono font-bold text-slate-300 tracking-tighter">
-                    {selectedStock.volume}
-                  </p>
-                  <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">24h Cumulative</p>
-                </div>
-
-                <div className="space-y-1.5 border-l border-slate-800/50 pl-8">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Daily High</label>
-                  <p className="text-3xl font-mono font-bold text-emerald-500 tracking-tighter">
-                    ${get24hHigh().toFixed(2)}
-                  </p>
-                  <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Max Session Price</p>
-                </div>
-
-                <div className="space-y-1.5 border-l border-slate-800/50 pl-8">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Daily Low</label>
-                  <p className="text-3xl font-mono font-bold text-rose-500 tracking-tighter">
-                    ${get24hLow().toFixed(2)}
-                  </p>
-                  <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Min Session Price</p>
-                </div>
+              <div className="flex items-center gap-4">
+                <span className="text-2xl font-mono font-medium text-white">${selectedStock.price.toFixed(2)}</span>
+                <span className={`text-sm font-medium ${selectedStock.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{selectedStock.change >= 0 ? '+' : ''}{selectedStock.change.toFixed(2)} ({selectedStock.changePercent}%)</span>
               </div>
-            </section>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${isAnalyzing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}></div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500">NexusAI Online</span>
-                  </div>
-                </div>
-                <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                  <svg className="w-6 h-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Gemini Market Outlook
-                </h3>
-                {isAnalyzing ? (
-                  <div className="flex flex-col gap-4 py-8 items-center justify-center">
-                    <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-                    <p className="text-slate-400 text-sm italic">Synthesizing insights...</p>
-                  </div>
-                ) : aiInsight ? (
-                  <div className="space-y-6">
-                    <div className="flex items-start gap-4">
-                      <div className={`px-4 py-2 rounded-lg font-bold text-sm uppercase ${
-                        aiInsight.sentiment === 'Bullish' ? 'bg-emerald-500/20 text-emerald-400' : 
-                        aiInsight.sentiment === 'Bearish' ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-700 text-slate-300'
-                      }`}>
-                        {aiInsight.sentiment}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-slate-300 leading-relaxed italic text-sm">"{aiInsight.summary}"</p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Recommendation</h4>
-                        <p className="text-emerald-400 font-bold">{aiInsight.recommendation}</p>
-                      </div>
-                      <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Key Drivers</h4>
-                        <ul className="text-xs text-slate-300 space-y-2">
-                          {aiInsight.keyFactors.map((f, i) => (
-                            <li key={i} className="flex items-center gap-2">
-                              <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>
-                              {f}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-slate-500 italic py-4">Select a stock to generate AI analysis.</p>
-                )}
-              </section>
-
-              <section className="space-y-4">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2 px-2">
-                  <svg className="w-6 h-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 4v4h4" />
-                  </svg>
-                  Latest Headlines
-                </h3>
-                <NewsFeed news={news} isLoading={isNewsLoading} stockSymbol={selectedStock.symbol} />
-              </section>
             </div>
-          </div>
+          </header>
 
-          <div className="space-y-6">
-            <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden group">
-              <div className={`absolute inset-0 bg-gradient-to-br ${isBuy ? 'from-emerald-500/5' : 'from-rose-500/5'} to-transparent opacity-50`}></div>
-              
-              <div className="relative">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-6">
-                  <div className={`w-2 h-5 ${isBuy ? 'bg-emerald-500' : 'bg-rose-500'} rounded-full`}></div>
-                  Trade Execution
-                </h3>
-
-                {orderType === 'LIMIT' ? (
-                  <div className="mb-6 p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 backdrop-blur-md flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-0.5">Order Strategy</span>
-                      <span className="text-xs font-bold text-white uppercase tracking-tighter">Dual-Terminal Limit Entry</span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+              <section className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 shadow-lg min-h-[400px]">
+                <StockChart stock={selectedStock} />
+              </section>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur-md">
+                   <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Asset Outlook</h3>
+                   {isAnalyzing ? (
+                    <div className="flex flex-col gap-4 py-8 items-center justify-center">
+                      <div className="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
                     </div>
-                    <div className="flex items-center gap-2 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20">
-                      <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></div>
-                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Active</span>
+                  ) : aiInsight ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${aiInsight.sentiment === 'Bullish' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>{aiInsight.sentiment}</span>
+                        <p className="text-slate-300 text-[11px] font-medium italic">"{aiInsight.recommendation}"</p>
+                      </div>
+                      <p className="text-slate-400 text-xs leading-relaxed line-clamp-3">{aiInsight.summary}</p>
                     </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 backdrop-blur-md animate-in fade-in duration-300">
-                    <button 
-                      onClick={() => setTradeSide('BUY')}
-                      className={`py-3 text-xs font-black uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-0.5 ${
-                        isBuy 
-                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' 
-                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
-                      }`}
-                    >
-                      <span>Long / Buy</span>
-                      <span className="text-[8px] opacity-60">Entry</span>
-                    </button>
-                    <button 
-                      onClick={() => setTradeSide('SELL')}
-                      className={`py-3 text-xs font-black uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-0.5 ${
-                        !isBuy 
-                          ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30' 
-                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
-                      }`}
-                    >
-                      <span>Short / Sell</span>
-                      <span className="text-[8px] opacity-60">Exit</span>
-                    </button>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-3 gap-2 mb-4 p-1.5 bg-slate-800/40 rounded-2xl border border-slate-800 backdrop-blur-md">
-                  {(['MARKET', 'LIMIT', 'STOP_LOSS'] as OrderType[]).map((type) => (
-                    <button 
-                      key={type}
-                      disabled={isBuy && type === 'STOP_LOSS'}
-                      onClick={() => {
-                        setOrderType(type);
-                        if (type !== 'STOP_LOSS') setIsTrailing(false);
-                      }}
-                      className={`py-3 px-1 text-[10px] font-bold uppercase rounded-xl transition-all duration-300 flex flex-col items-center justify-center gap-1 ${
-                        orderType === type 
-                          ? `${(isBuy || type === 'LIMIT') ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/20 text-rose-400 border border-rose-500/20'} shadow-lg` 
-                          : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800/50'
-                      } ${isBuy && type === 'STOP_LOSS' ? 'opacity-30 cursor-not-allowed' : ''}`}
-                    >
-                      <span className="tracking-tighter">{type.replace('_', ' ')}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="space-y-3 mb-6">
-                  <div className="flex items-center justify-between px-2 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <svg className="w-3 h-3 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Schedule Trade
-                    </span>
-                    <button 
-                      onClick={() => setIsScheduled(!isScheduled)}
-                      className={`w-10 h-5 rounded-full relative transition-colors ${isScheduled ? 'bg-amber-500' : 'bg-slate-700'}`}
-                    >
-                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isScheduled ? 'left-6' : 'left-1'}`} />
-                    </button>
-                  </div>
-
-                  {isScheduled && (
-                    <div className="p-1 bg-slate-800/60 rounded-xl border border-slate-700/30 animate-in fade-in slide-in-from-top-1 duration-200">
-                      <input 
-                        type="datetime-local" 
-                        value={scheduledTime}
-                        onChange={(e) => setScheduledTime(e.target.value)}
-                        className="w-full bg-transparent border-none text-[10px] font-mono font-bold text-slate-200 p-2 focus:ring-0 color-scheme-dark"
-                        style={{ colorScheme: 'dark' }}
-                      />
-                    </div>
+                  ) : (
+                    <p className="text-slate-500 text-[11px] italic">Awaiting AI synthesis...</p>
                   )}
-                </div>
+                </section>
+                <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur-md">
+                  <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Real-time Feed</h3>
+                  <NewsFeed news={news.slice(0, 2)} isLoading={isNewsLoading} stockSymbol={selectedSymbol} />
+                </section>
+              </div>
+            </div>
 
-                {orderType === 'STOP_LOSS' && !isBuy && (
-                  <div className="space-y-3 mb-6 animate-in slide-in-from-top-4 duration-300">
-                    <div className="flex items-center justify-between px-2 bg-slate-800/30 py-2 rounded-xl border border-slate-700/50">
+            <div className="space-y-6">
+              <section className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden group">
+                <div className={`absolute inset-0 bg-gradient-to-br ${isBuy ? 'from-emerald-500/5' : 'from-rose-500/5'} to-transparent opacity-50`}></div>
+                <div className="relative">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-6"><div className={`w-1.5 h-4 ${isBuy ? 'bg-emerald-500' : 'bg-rose-500'} rounded-full`}></div>Terminal</h3>
+                  <div className="grid grid-cols-2 gap-2 mb-4 p-1 bg-slate-800/60 rounded-xl border border-slate-700/50">
+                    <button onClick={() => setTradeSide('BUY')} className={`py-2 text-[10px] font-black uppercase rounded-lg transition-all ${isBuy ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Buy</button>
+                    <button onClick={() => setTradeSide('SELL')} className={`py-2 text-[10px] font-black uppercase rounded-lg transition-all ${!isBuy ? 'bg-rose-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Sell</button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-6 p-1 bg-slate-800/40 rounded-xl border border-slate-800">
+                    {(['MARKET', 'LIMIT', 'STOP_LOSS'] as OrderType[]).map((type) => (
+                      <button key={type} onClick={() => setOrderType(type)} className={`py-1.5 text-[8px] font-bold uppercase rounded-lg transition-all ${orderType === type ? 'bg-slate-700 text-white' : 'text-slate-600 hover:text-slate-400'}`}>{type.replace('_', ' ')}</button>
+                    ))}
+                  </div>
+
+                  {/* TRAILING TOGGLE - ONLY FOR STOP LOSS */}
+                  {orderType === 'STOP_LOSS' && (
+                    <div className="mb-6 p-4 bg-indigo-500/5 rounded-2xl border border-indigo-500/10 flex items-center justify-between">
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trailing Activation</span>
-                        <span className="text-[8px] text-slate-600 font-bold uppercase">Tracks Market Peak</span>
+                        <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Trailing Mode</span>
+                        <span className="text-[10px] text-slate-500 font-medium">Automatic peak tracking</span>
                       </div>
                       <button 
                         onClick={() => setIsTrailing(!isTrailing)}
-                        className={`w-10 h-5 rounded-full relative transition-colors ${isTrailing ? 'bg-rose-500' : 'bg-slate-700'}`}
+                        className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isTrailing ? 'bg-indigo-500' : 'bg-slate-700'}`}
                       >
-                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isTrailing ? 'left-6' : 'left-1'}`} />
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isTrailing ? 'translate-x-5' : 'translate-x-0'}`} />
                       </button>
-                    </div>
-
-                    {isTrailing && (
-                      <div className="space-y-3 animate-in fade-in duration-300">
-                        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-800/60 rounded-xl border border-slate-700/30">
-                          {(['FIXED', 'PERCENT'] as TrailingType[]).map((type) => (
-                            <button
-                              key={type}
-                              onClick={() => setTrailingType(type)}
-                              className={`py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
-                                trailingType === type 
-                                  ? 'bg-slate-700 text-rose-400 border border-rose-500/20 shadow-inner' 
-                                  : 'text-slate-500 hover:text-slate-300'
-                              }`}
-                            >
-                              {type === 'FIXED' ? 'Amount ($)' : 'Distance (%)'}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="p-3 bg-rose-500/5 border border-rose-500/10 rounded-xl flex items-center justify-between">
-                           <div>
-                              <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Live Stop Preview</p>
-                              <p className="text-lg font-mono font-bold text-rose-400 leading-none">
-                                ${calculatePreviewStopPrice().toFixed(2)}
-                              </p>
-                           </div>
-                           <div className="text-right">
-                              <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest leading-none mb-1">Offset</p>
-                              <p className="text-xs font-mono font-bold text-white">
-                                {limitPrice || '0'}{trailingType === 'PERCENT' ? '%' : '$'}
-                              </p>
-                           </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                <div className="space-y-6">
-                  {orderType !== 'MARKET' && (
-                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
-                          {isTrailing ? `Trailing Offset (${trailingType === 'PERCENT' ? '%' : '$'})` : (orderType === 'LIMIT' ? 'Target Limit Price' : 'Activation Stop Price')}
-                        </label>
-                      </div>
-                      <div className="relative group/input">
-                        {(!isTrailing || trailingType === 'FIXED') && (
-                          <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-${themeColor}-400 transition-colors`}>$</span>
-                        )}
-                        <input 
-                          type="number" 
-                          value={limitPrice}
-                          onChange={(e) => setLimitPrice(e.target.value)}
-                          placeholder={isTrailing ? (trailingType === 'PERCENT' ? "5.00" : "10.00") : selectedStock.price.toFixed(2)}
-                          className={`w-full bg-slate-800/80 border border-slate-700 rounded-2xl pr-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-${themeColor}-500/50 transition-all placeholder:text-slate-700 ${(!isTrailing || trailingType === 'FIXED') ? 'pl-8' : 'pl-4'}`}
-                        />
-                        {isTrailing && trailingType === 'PERCENT' && (
-                          <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono group-focus-within/input:text-${themeColor}-400 transition-colors`}>%</span>
-                        )}
-                      </div>
                     </div>
                   )}
 
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Volume (Units)</label>
-                      <div className="flex gap-2">
-                        {[0.25, 0.5, 1].map((p) => (
-                          <button 
-                            key={p}
-                            onClick={() => handleQuickAmount(p)}
-                            className={`px-2 py-0.5 rounded-md bg-slate-800 text-slate-500 text-[9px] font-bold hover:text-${themeColor}-400 transition-colors border border-slate-700/50`}
-                          >
-                            {p === 1 ? 'MAX' : `${p * 100}%`}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <input 
-                      type="number" 
-                      value={tradeAmount}
-                      onChange={(e) => setTradeAmount(e.target.value)}
-                      placeholder="0.00"
-                      className={`w-full bg-slate-800/80 border border-slate-700 rounded-2xl px-4 py-4 text-2xl font-mono text-white focus:outline-none focus:ring-2 focus:ring-${themeColor}-500/50 transition-all placeholder:text-slate-700`}
-                    />
-                  </div>
+                  <div className="space-y-5">
+                    {orderType !== 'MARKET' && (
+                      <div className="space-y-4">
+                        <div className="flex items-end gap-3">
+                          <div className="flex-1">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
+                              {isTrailing ? 'Trailing Amount' : 'Target Price'}
+                            </label>
+                            <input 
+                              type="number" 
+                              value={limitPrice} 
+                              onChange={(e) => setLimitPrice(e.target.value)} 
+                              placeholder={isTrailing ? (trailingType === 'PERCENT' ? "5.0" : "1.00") : selectedStock.price.toFixed(2)} 
+                              className={`w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-3 text-xl font-mono text-white focus:outline-none focus:ring-1 focus:ring-${isTrailing ? 'indigo' : themeColor}-500/50`} 
+                            />
+                          </div>
+                          {isTrailing && (
+                            <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700">
+                              {(['FIXED', 'PERCENT'] as TrailingType[]).map((t) => (
+                                <button
+                                  key={t}
+                                  onClick={() => setTrailingType(t)}
+                                  className={`px-3 py-2 text-[10px] font-black rounded-lg transition-all ${
+                                    trailingType === t ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+                                  }`}
+                                >
+                                  {t === 'FIXED' ? '$' : '%'}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
 
-                  <div className="bg-slate-800/40 p-5 rounded-2xl border border-slate-700/30 space-y-3 backdrop-blur-sm">
-                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
-                      <span className="text-slate-500">Notional Allocation</span>
-                      <span className="text-white font-mono">
-                        ${((parseFloat(tradeAmount) || 0) * (orderType !== 'MARKET' ? (isTrailing ? selectedStock.price : parseFloat(limitPrice) || selectedStock.price) : selectedStock.price)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="pt-4">
-                    {orderType === 'LIMIT' ? (
-                      <div className="grid grid-cols-2 gap-4 animate-in fade-in zoom-in duration-500">
-                        <button 
-                          onClick={() => handleTrade('BUY')}
-                          className="group relative flex flex-col items-center justify-center py-7 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-95 border-2 border-emerald-400/30 overflow-hidden"
-                        >
-                           <div className="absolute -top-1 -right-1 p-2 opacity-10 rotate-12">
-                              <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 20 20"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" /></svg>
-                           </div>
-                           <span className="text-[10px] uppercase tracking-[0.2em] font-black opacity-80 mb-1">Entry Strategy</span>
-                           <span className="text-xl uppercase tracking-tighter">Limit Buy</span>
-                           <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full mt-2 tracking-tight">@ ${limitPrice || '0.00'}</span>
-                        </button>
-                        
-                        <button 
-                          onClick={() => handleTrade('SELL')}
-                          className="group relative flex flex-col items-center justify-center py-7 bg-rose-500 hover:bg-rose-400 text-white font-black rounded-2xl transition-all shadow-xl shadow-rose-500/20 active:scale-95 border-2 border-rose-400/30 overflow-hidden"
-                        >
-                           <div className="absolute -top-1 -right-1 p-2 opacity-10 -rotate-12">
-                              <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 20 20"><path d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" /></svg>
-                           </div>
-                           <span className="text-[10px] uppercase tracking-[0.2em] font-black opacity-80 mb-1">Exit Strategy</span>
-                           <span className="text-xl uppercase tracking-tighter">Limit Sell</span>
-                           <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full mt-2 tracking-tight">@ ${limitPrice || '0.00'}</span>
-                        </button>
+                        {isTrailing && (
+                          <div className="p-3 bg-slate-800/40 rounded-xl border border-slate-700/50 flex justify-between items-center">
+                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Initial Stop</span>
+                            <span className="text-xs font-mono font-bold text-indigo-400">
+                              ${calculatePreviewStopPrice().toFixed(2)}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <button 
-                        onClick={() => handleTrade()}
-                        disabled={isBuy && orderType === 'STOP_LOSS'}
-                        className={`w-full group font-black py-6 rounded-2xl transition-all active:scale-95 shadow-xl flex flex-col items-center justify-center gap-1 border-2 ${
-                          isBuy 
-                            ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-400/30 shadow-emerald-500/20' 
-                            : 'bg-rose-500 hover:bg-rose-400 text-white border-rose-400/30 shadow-rose-500/20'
-                        } ${isBuy && orderType === 'STOP_LOSS' ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
-                      >
-                        <span className="text-[10px] uppercase tracking-widest opacity-80 group-hover:opacity-100 transition-opacity">
-                          {isScheduled ? 'Scheduled Execution' : 'Instant Execution'}
-                        </span>
-                        <span className="text-lg font-black uppercase">
-                          {isBuy ? 'Confirm Buy Order' : (orderType === 'STOP_LOSS' ? (isTrailing ? 'Set Trailing Stop' : 'Set Stop Loss') : 'Confirm Sell Order')}
-                        </span>
-                      </button>
                     )}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Position in {selectedSymbol}</h3>
-              {currentPosition ? (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-end border-b border-slate-800 pb-4">
                     <div>
-                      <p className="text-xs text-slate-500 uppercase font-bold tracking-tighter">Ownership</p>
-                      <p className="text-2xl font-mono text-white">{currentPosition.shares} Shares</p>
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Units</label>
+                      <input type="number" value={tradeAmount} onChange={(e) => setTradeAmount(e.target.value)} placeholder="0" className={`w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-3 text-xl font-mono text-white focus:outline-none focus:ring-1 focus:ring-${themeColor}-500/50`} />
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 uppercase font-bold tracking-tighter">Cost Basis</p>
-                      <p className="text-xl font-mono text-slate-300">${currentPosition.avgPrice.toFixed(2)}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div className={`flex justify-between text-sm`}>
-                      <span className="text-slate-500">Unrealized P&L</span>
-                      <span className={`font-mono font-bold ${
-                        selectedStock.price >= currentPosition.avgPrice ? 'text-emerald-400' : 'text-rose-400'
-                      }`}>
-                        ${((selectedStock.price - currentPosition.avgPrice) * currentPosition.shares).toFixed(2)}
-                      </span>
-                    </div>
+                    <button onClick={() => handleTrade()} className={`w-full font-black py-5 rounded-xl transition-all active:scale-95 shadow-xl uppercase tracking-widest text-xs ${isBuy ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950' : 'bg-rose-500 hover:bg-rose-400 text-white'}`}>Confirm Order</button>
                   </div>
                 </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-slate-500 text-sm">No position in {selectedSymbol}.</p>
-                </div>
-              )}
-            </section>
-
-            <PendingOrders 
-              orders={portfolio.pendingOrders} 
-              onCancel={cancelOrder} 
-              onUpdate={updateOrder}
-            />
+              </section>
+              <PendingOrders orders={portfolio.pendingOrders} onCancel={cancelOrder} onUpdate={updateOrder} stocks={stocks} />
+            </div>
           </div>
+          <section className="pb-10">
+            <TradeHistory history={portfolio.history} stocks={stocks} />
+          </section>
         </div>
-
-        <section className="mb-8">
-          <TradeHistory history={portfolio.history} stocks={stocks} />
-        </section>
       </main>
-
-      <ConfirmationModal 
-        isOpen={pendingTrade !== null}
-        onClose={() => setPendingTrade(null)}
-        onConfirm={executeTrade}
-        tradeInfo={pendingTrade}
-      />
+      <ConfirmationModal isOpen={pendingTrade !== null} onClose={() => setPendingTrade(null)} onConfirm={executeTrade} tradeInfo={pendingTrade} />
     </div>
   );
 };
